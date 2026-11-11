@@ -60,7 +60,7 @@ class BeanScannerTest {
                 this.scanner.scan(testRoot(), BeanScannerTest.class.getClassLoader(), FIXTURES + ".sibling"));
         assertTrue(names.contains("SiblingBean"));
         assertFalse(names.contains("AnnotatedBean"),
-                "класс из другого пакета не должен попасть");
+                "class from another package should not be found");
     }
 
     @Test
