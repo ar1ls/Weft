@@ -15,15 +15,15 @@ import java.util.stream.Collectors;
 
 public class BeanScanner {
 
-    public List<Class<?>> scan(@NonNull Path path) {
-        return this.scan(path, null);
+    public List<Class<?>> scan(@NonNull Path path, @NonNull ClassLoader classLoader) {
+        return this.scan(path, classLoader, null);
     }
 
-    public List<Class<?>> scan(@NonNull Path path, String packageName) {
-        return this.scan(path, packageName, new String[0]);
+    public List<Class<?>> scan(@NonNull Path path, ClassLoader classLoader, String packageName) {
+        return this.scan(path, classLoader, packageName, new String[0]);
     }
 
-    public List<Class<?>> scan(@NonNull Path path, String packageName, String... excludePackages) {
+    public List<Class<?>> scan(@NonNull Path path, @NonNull ClassLoader classLoader, String packageName, String... excludePackages) {
         if (!Files.isDirectory(path)) {
             throw new BeanScannerException("Not a directory: " + path);
         }
@@ -36,7 +36,7 @@ public class BeanScanner {
                     .filter(this::isUserClass)
                     .filter(name -> this.matchesPackage(name, packageName))
                     .filter(name -> !this.matchesAny(name, excludePackages))
-                    .map(this::loadClass)
+                    .map(name -> this.loadClass(name, classLoader))
                     .filter(c -> c.isAnnotationPresent(Bean.class))
                     .filter(c -> !c.isInterface() && !Modifier.isAbstract(c.getModifiers()))
                     .sorted(Comparator.comparing(Class::getName))
@@ -73,9 +73,9 @@ public class BeanScanner {
         return false;
     }
 
-    private Class<?> loadClass(String name) {
+    private Class<?> loadClass(String name, ClassLoader classLoader) {
         try {
-            return Class.forName(name, false, Thread.currentThread().getContextClassLoader());
+            return Class.forName(name, false, classLoader);
         } catch (ClassNotFoundException | LinkageError e) {
             throw new BeanScannerException("Cannot load class: " + name, e);
         }

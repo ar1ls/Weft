@@ -33,19 +33,19 @@ class BeanScannerTest {
 
     @Test
     void findsAnnotatedClassesInPackage() throws Exception {
-        var found = this.scanner.scan(testRoot(), FIXTURES);
+        var found = this.scanner.scan(testRoot(), BeanScannerTest.class.getClassLoader(), FIXTURES);
         assertTrue(simpleNames(found).contains("AnnotatedBean"));
     }
 
     @Test
     void ignoresClassesWithoutBeanAnnotation() throws Exception {
-        var found = this.scanner.scan(testRoot(), FIXTURES + ".plain");
+        var found = this.scanner.scan(testRoot(), BeanScannerTest.class.getClassLoader(), FIXTURES + ".plain");
         assertTrue(found.isEmpty(), "JustPlain не должен находиться");
     }
 
     @Test
     void scanWithoutPackageFindsAll() throws Exception {
-        var names = simpleNames(this.scanner.scan(testRoot()));
+        var names = simpleNames(this.scanner.scan(testRoot(), BeanScannerTest.class.getClassLoader()));
         assertTrue(names.contains("AnnotatedBean"));
         assertTrue(names.contains("SiblingBean"));
     }
@@ -57,7 +57,7 @@ class BeanScannerTest {
     @Test
     void respectsPackageFilter() throws Exception {
         var names = simpleNames(
-                this.scanner.scan(testRoot(), FIXTURES + ".sibling"));
+                this.scanner.scan(testRoot(), BeanScannerTest.class.getClassLoader(), FIXTURES + ".sibling"));
         assertTrue(names.contains("SiblingBean"));
         assertFalse(names.contains("AnnotatedBean"),
                 "класс из другого пакета не должен попасть");
@@ -65,7 +65,7 @@ class BeanScannerTest {
 
     @Test
     void excludesPackages() throws Exception {
-        var names = simpleNames(this.scanner.scan(testRoot(), FIXTURES,
+        var names = simpleNames(this.scanner.scan(testRoot(), BeanScannerTest.class.getClassLoader(), FIXTURES,
                 FIXTURES + ".excluded"));
         assertFalse(names.contains("ExcludedBean"));
         assertTrue(names.contains("AnnotatedBean"));
@@ -77,12 +77,12 @@ class BeanScannerTest {
 
     @Test
     void abstractAnnotatedClassIsFiltered() throws Exception {
-        assertTrue(this.scanner.scan(testRoot(), FIXTURES + ".abstracts").isEmpty());
+        assertTrue(this.scanner.scan(testRoot(), BeanScannerTest.class.getClassLoader(), FIXTURES + ".abstracts").isEmpty());
     }
 
     @Test
     void annotatedInterfaceIsFiltered() throws Exception {
-        assertTrue(this.scanner.scan(testRoot(), FIXTURES + ".interfaces").isEmpty());
+        assertTrue(this.scanner.scan(testRoot(), BeanScannerTest.class.getClassLoader(), FIXTURES + ".interfaces").isEmpty());
     }
 
     /**
@@ -92,20 +92,20 @@ class BeanScannerTest {
     @Test
     void missingDirectoryThrows() {
         var ex = assertThrows(BeanScannerException.class,
-                () -> this.scanner.scan(Path.of("does/not/exist")));
+                () -> this.scanner.scan(Path.of("does/not/exist"), BeanScannerTest.class.getClassLoader()));
         assertTrue(ex.getMessage().contains("Not a directory"));
     }
 
     @Test
     void returnsEmptyListNotNull() throws Exception {
-        var found = this.scanner.scan(testRoot(), FIXTURES + ".plain");
+        var found = this.scanner.scan(testRoot(), BeanScannerTest.class.getClassLoader(), FIXTURES + ".plain");
         assertNotNull(found);
         assertTrue(found.isEmpty());
     }
 
     @Test
     void resultIsSortedByName() throws Exception {
-        var names = this.scanner.scan(testRoot(), FIXTURES).stream()
+        var names = this.scanner.scan(testRoot(), BeanScannerTest.class.getClassLoader(), FIXTURES).stream()
                 .map(Class::getName).toList();
         assertEquals(names.stream().sorted().toList(), names);
     }
@@ -117,7 +117,7 @@ class BeanScannerTest {
     @Test
     void staticInitializerIsNotInvoked() throws Exception {
         System.clearProperty("weft.probe.initialized");
-        var found = this.scanner.scan(testRoot(), FIXTURES + ".probes");
+        var found = this.scanner.scan(testRoot(), BeanScannerTest.class.getClassLoader(), FIXTURES + ".probes");
         assertFalse(found.isEmpty(), "class should be found");
         assertNull(System.getProperty("weft.probe.initialized"));
     }
