@@ -104,7 +104,7 @@ class BeanCreatorTest {
     }
 
     @Test
-    void rejectsDependenciesBeforeCallingFactory() {
+    void requiresResolvedArgumentsBeforeCallingDependentFactory() {
         var creator = new BeanCreator();
         var calls = new AtomicInteger();
         var dependency = new DependencyDescriptor(TypeRef.of(SimpleBean.class), "", DependencyKind.DIRECT, new InjectionPoint("test factory argument"));
@@ -132,6 +132,41 @@ class BeanCreatorTest {
 
         assertThrows(BeanCreationException.class, () -> creator.create(definition));
         assertEquals(0, calls.get());
+    }
+
+    @Test
+    void createsDefinitionWithResolvedArguments() {
+        var creator = new BeanCreator();
+        var definition = BeanDefinitions.of(ConstructorDependentBean.class);
+        var dependency = new SimpleBean();
+
+        var bean = (ConstructorDependentBean) creator.create(definition, new Object[]{dependency});
+
+        assertSame(dependency, bean.dependency());
+    }
+
+    @Test
+    void rejectsWrongArgumentTypeBeforeCallingFactory() {
+        var creator = new BeanCreator();
+        var calls = new AtomicInteger();
+        var dependency = new DependencyDescriptor(TypeRef.of(SimpleBean.class), "", DependencyKind.DIRECT,
+                new InjectionPoint("test argument"));
+        var factory = new TestBeanFactory(List.of(dependency), () -> {
+            calls.incrementAndGet();
+            return new SimpleBean();
+        });
+        var definition = BeanDefinitions.of(SimpleBean.class, factory);
+
+        assertThrows(BeanCreationException.class, () -> creator.create(definition, new Object[]{new Object()}));
+        assertThrows(BeanCreationException.class, () -> creator.create(definition, new Object[]{null}));
+        assertEquals(0, calls.get());
+    }
+
+    @Test
+    void requiresResolvedArgumentsForSelectedInjectConstructor() {
+        var creator = new BeanCreator();
+
+        assertThrows(BeanCreationException.class, () -> creator.create(InjectedConstructorBean.class));
     }
 
 }

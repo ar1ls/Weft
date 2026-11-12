@@ -9,6 +9,14 @@ import com.github.ar1ls.weft.runtime.fixtures.BeanDefinitions;
 import com.github.ar1ls.weft.runtime.fixtures.SimpleBean;
 import com.github.ar1ls.weft.runtime.fixtures.TestBeanFactory;
 import com.github.ar1ls.weft.runtime.fixtures.ThrowingConstructorBean;
+import com.github.ar1ls.weft.runtime.fixtures.ConstructorDependentBean;
+import com.github.ar1ls.weft.runtime.fixtures.CyclicFirstBean;
+import com.github.ar1ls.weft.runtime.fixtures.CyclicSecondBean;
+import com.github.ar1ls.weft.runtime.fixtures.GenericDependentBean;
+import com.github.ar1ls.weft.runtime.fixtures.InjectedConstructorBean;
+import com.github.ar1ls.weft.runtime.fixtures.NamedDependentBean;
+import com.github.ar1ls.weft.runtime.fixtures.OuterDependentBean;
+import com.github.ar1ls.weft.runtime.fixtures.PairDependentBean;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -159,7 +167,7 @@ class WeftRuntimeTest {
             calls.incrementAndGet();
             return new SimpleBean();
         });
-        var dependency = new DependencyDescriptor(TypeRef.of(SimpleBean.class), "", DependencyKind.DIRECT,
+        var dependency = new DependencyDescriptor(TypeRef.of(SimpleBean.class), "", DependencyKind.PROVIDER,
                 new InjectionPoint("test factory argument"));
         var secondFactory = new TestBeanFactory(List.of(dependency), Object::new);
 
@@ -207,6 +215,136 @@ class WeftRuntimeTest {
                 assertThrows(IllegalStateException.class, () -> runtime.get(SimpleBean.class))).join();
 
         assertTrue(exception.getMessage().contains("owner thread"));
+    }
+
+    @Test
+    void injectsRegisteredSingletonRegardlessOfRegistrationOrder() {
+        var runtime = this.runtimeFor(BeanDefinitions.of(ConstructorDependentBean.class), BeanDefinitions.of(SimpleBean.class));
+        runtime.start();
+
+        var bean = runtime.get(ConstructorDependentBean.class);
+
+        assertSame(runtime.get(SimpleBean.class), bean.dependency());
+    }
+
+    @Test
+    void injectsThroughSelectedInjectConstructor() {
+        var runtime = this.runtimeFor(BeanDefinitions.of(InjectedConstructorBean.class), BeanDefinitions.of(SimpleBean.class));
+        runtime.start();
+
+        assertSame(runtime.get(SimpleBean.class), runtime.get(InjectedConstructorBean.class).getDependency());
+    }
+
+    @Test
+    void preservesArgumentOrderAndSharesTransitiveSingleton() {
+        var runtime = this.runtimeFor(BeanDefinitions.of(PairDependentBean.class),
+                BeanDefinitions.of(ConstructorDependentBean.class), BeanDefinitions.of(SimpleBean.class));
+        runtime.start();
+
+        var pair = runtime.get(PairDependentBean.class);
+
+        assertSame(runtime.get(SimpleBean.class), pair.first());
+        assertSame(runtime.get(ConstructorDependentBean.class), pair.second());
+        assertSame(pair.first(), pair.second().dependency());
+    }
+
+    @Test
+    void reportsMissingDependencyBeforeCallingAnyFactory() {
+        var calls = new AtomicInteger();
+        var unrelated = new TestBeanFactory(List.of(), () -> {
+            calls.incrementAndGet();
+            return new Object();
+        });
+
+        var exception = assertThrows(MissingBeanException.class, () -> this.runtimeFor(
+                BeanDefinitions.of(Object.class, unrelated), BeanDefinitions.of(ConstructorDependentBean.class)));
+
+        assertTrue(exception.getMessage().contains(ConstructorDependentBean.class.getName()));
+        assertTrue(exception.getMessage().contains(SimpleBean.class.getName()));
+        assertTrue(exception.getMessage().contains("parameter 0"));
+        assertEquals(0, calls.get());
+    }
+
+    @Test
+    void reportsFullTransitiveMissingDependencyPath() {
+        var exception = assertThrows(MissingBeanException.class, () -> this.runtimeFor(
+                BeanDefinitions.of(OuterDependentBean.class), BeanDefinitions.of(ConstructorDependentBean.class)));
+
+        assertTrue(exception.getMessage().contains(OuterDependentBean.class.getName()
+                + " -> " + ConstructorDependentBean.class.getName() + " -> " + SimpleBean.class.getName()));
+    }
+
+    @Test
+    void validatesMissingDependencyOfUnusedLazyBean() {
+        var base = BeanDefinitions.of(ConstructorDependentBean.class);
+        var lazy = BeanDefinitions.of(ConstructorDependentBean.class, BeanScope.SINGLETON, true, base.factory());
+
+        assertThrows(MissingBeanException.class, () -> this.runtimeFor(lazy));
+    }
+
+    @Test
+    void reportsConstructorCycleBeforeStartup() {
+        var exception = assertThrows(DefinitionException.class, () -> this.runtimeFor(
+                BeanDefinitions.of(CyclicFirstBean.class), BeanDefinitions.of(CyclicSecondBean.class)));
+
+        assertTrue(exception.getMessage().contains(CyclicFirstBean.class.getName()
+                + " -> " + CyclicSecondBean.class.getName() + " -> " + CyclicFirstBean.class.getName()));
+    }
+
+    @Test
+    void reportsSelfDependencyWithoutCallingFactory() {
+        var calls = new AtomicInteger();
+        var dependency = new DependencyDescriptor(TypeRef.of(SimpleBean.class), "", DependencyKind.DIRECT,
+                new InjectionPoint("self dependency"));
+        var factory = new TestBeanFactory(List.of(dependency), () -> {
+            calls.incrementAndGet();
+            return new SimpleBean();
+        });
+
+        assertThrows(DefinitionException.class, () -> this.runtimeFor(BeanDefinitions.of(SimpleBean.class, factory)));
+        assertEquals(0, calls.get());
+    }
+
+    @Test
+    void createsLazyDependencyWhenRequiredByEagerSingleton() {
+        var calls = new AtomicInteger();
+        var factory = new TestBeanFactory(List.of(), () -> {
+            calls.incrementAndGet();
+            return new SimpleBean();
+        });
+        var lazy = BeanDefinitions.of(SimpleBean.class, BeanScope.SINGLETON, true, factory);
+        var runtime = this.runtimeFor(BeanDefinitions.of(ConstructorDependentBean.class), lazy);
+
+        runtime.start();
+
+        assertEquals(1, calls.get());
+        assertSame(runtime.get(SimpleBean.class), runtime.get(ConstructorDependentBean.class).dependency());
+    }
+
+    @Test
+    void injectsPrototypeOnceIntoSingleton() {
+        var calls = new AtomicInteger();
+        var factory = new TestBeanFactory(List.of(), () -> {
+            calls.incrementAndGet();
+            return new SimpleBean();
+        });
+        var prototype = BeanDefinitions.of(SimpleBean.class, BeanScope.PROTOTYPE, false, factory);
+        var runtime = this.runtimeFor(BeanDefinitions.of(ConstructorDependentBean.class), prototype);
+
+        runtime.start();
+
+        var consumer = runtime.get(ConstructorDependentBean.class);
+        assertEquals(1, calls.get());
+        assertSame(consumer, runtime.get(ConstructorDependentBean.class));
+        assertNotSame(consumer.dependency(), runtime.get(SimpleBean.class));
+        assertEquals(2, calls.get());
+    }
+
+    @Test
+    void rejectsNamedAndGenericDependenciesExplicitly() {
+        assertThrows(DefinitionException.class, () -> this.runtimeFor(
+                BeanDefinitions.of(NamedDependentBean.class), BeanDefinitions.of(SimpleBean.class)));
+        assertThrows(DefinitionException.class, () -> this.runtimeFor(BeanDefinitions.of(GenericDependentBean.class)));
     }
 
     private WeftRuntime runtimeFor(BeanDefinition... definitions) {
