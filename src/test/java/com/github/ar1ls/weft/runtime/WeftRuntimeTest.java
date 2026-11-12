@@ -167,7 +167,7 @@ class WeftRuntimeTest {
             calls.incrementAndGet();
             return new SimpleBean();
         });
-        var dependency = new DependencyDescriptor(TypeRef.of(SimpleBean.class), "", DependencyKind.PROVIDER,
+        var dependency = new DependencyDescriptor(TypeRef.of(SimpleBean.class), "", DependencyKind.OPTIONAL,
                 new InjectionPoint("test factory argument"));
         var secondFactory = new TestBeanFactory(List.of(dependency), Object::new);
 

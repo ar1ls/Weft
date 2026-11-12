@@ -48,8 +48,9 @@ public class DependencyResolver {
 
     public BeanDefinition resolve(@NonNull DependencyDescriptor dependency) {
         var point = dependency.injectionPoint().description();
-        if (dependency.kind() != DependencyKind.DIRECT || !dependency.name().isEmpty()) {
-            throw new DefinitionException("Only unnamed direct dependencies are supported at " + point);
+        if ((dependency.kind() != DependencyKind.DIRECT && dependency.kind() != DependencyKind.PROVIDER)
+                || !dependency.name().isEmpty()) {
+            throw new DefinitionException("Only unnamed direct/provider dependencies are supported at " + point);
         }
         if (!(dependency.type().type() instanceof Class<?> type)) {
             throw new DefinitionException("Only class dependencies are supported at " + point);

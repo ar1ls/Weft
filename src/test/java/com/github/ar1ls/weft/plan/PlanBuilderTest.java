@@ -1,12 +1,16 @@
 package com.github.ar1ls.weft.plan;
 
+import com.github.ar1ls.weft.definition.BeanKey;
+import com.github.ar1ls.weft.definition.DependencyKind;
 import com.github.ar1ls.weft.runtime.fixtures.BeanDefinitions;
 import com.github.ar1ls.weft.runtime.fixtures.ConstructorDependentBean;
 import com.github.ar1ls.weft.runtime.fixtures.PairDependentBean;
+import com.github.ar1ls.weft.runtime.fixtures.ProviderDependentBean;
 import com.github.ar1ls.weft.runtime.fixtures.SimpleBean;
 import com.github.ar1ls.weft.runtime.fixtures.TestBeanFactory;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -24,8 +28,8 @@ class PlanBuilderTest {
         var plan = new PlanBuilder().build(resolver);
 
         assertEquals(List.of(simple.key(), dependent.key(), pair.key()), plan.creationOrder());
-        assertEquals(List.of(simple.key(), dependent.key()), plan.beans().get(pair.key()).arguments());
-        assertEquals(List.of(simple.key()), plan.beans().get(dependent.key()).arguments());
+        assertEquals(List.of(simple.key(), dependent.key()), this.targets(plan.beans().get(pair.key())));
+        assertEquals(List.of(simple.key()), this.targets(plan.beans().get(dependent.key())));
     }
 
     @Test
@@ -52,6 +56,28 @@ class PlanBuilderTest {
         assertThrows(UnsupportedOperationException.class, () -> plan.beans().clear());
         assertThrows(UnsupportedOperationException.class, () -> plan.creationOrder().clear());
         assertThrows(UnsupportedOperationException.class, () -> plan.beans().get(definition.key()).arguments().clear());
+    }
+
+    @Test
+    void bindsProviderTargetWithoutAddingDirectCreationEdge() {
+        var consumer = BeanDefinitions.of(ProviderDependentBean.class);
+        var target = BeanDefinitions.of(SimpleBean.class);
+        var resolver = new DependencyResolver(List.of(consumer, target));
+
+        var plan = new PlanBuilder().build(resolver);
+
+        var argument = plan.beans().get(consumer.key()).arguments().getFirst();
+        assertEquals(target.key(), argument.target());
+        assertEquals(DependencyKind.PROVIDER, argument.descriptor().kind());
+        assertEquals(List.of(consumer.key(), target.key()), plan.creationOrder());
+    }
+
+    private List<BeanKey> targets(CreationPlan plan) {
+        var targets = new ArrayList<BeanKey>();
+        for (var argument : plan.arguments()) {
+            targets.add(argument.target());
+        }
+        return targets;
     }
 
 }

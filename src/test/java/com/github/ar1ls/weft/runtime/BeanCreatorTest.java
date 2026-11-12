@@ -1,5 +1,6 @@
 package com.github.ar1ls.weft.runtime;
 
+import com.github.ar1ls.weft.api.Provider;
 import com.github.ar1ls.weft.api.exception.BeanCreationException;
 import com.github.ar1ls.weft.definition.*;
 import com.github.ar1ls.weft.runtime.factory.ConstructorBeanFactory;
@@ -167,6 +168,23 @@ class BeanCreatorTest {
         var creator = new BeanCreator();
 
         assertThrows(BeanCreationException.class, () -> creator.create(InjectedConstructorBean.class));
+    }
+
+    @Test
+    void acceptsProviderWrapperWithoutInvokingIt() {
+        var creator = new BeanCreator();
+        var calls = new AtomicInteger();
+        Provider<SimpleBean> provider = () -> {
+            calls.incrementAndGet();
+            return new SimpleBean();
+        };
+        var definition = BeanDefinitions.of(ProviderDependentBean.class);
+
+        var bean = (ProviderDependentBean) creator.create(definition, new Object[]{provider});
+
+        assertSame(provider, bean.provider());
+        assertEquals(0, calls.get());
+        assertThrows(BeanCreationException.class, () -> creator.create(definition, new Object[]{new SimpleBean()}));
     }
 
 }

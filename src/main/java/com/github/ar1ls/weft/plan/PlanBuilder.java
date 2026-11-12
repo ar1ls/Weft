@@ -4,6 +4,7 @@ import com.github.ar1ls.weft.api.exception.DefinitionException;
 import com.github.ar1ls.weft.api.exception.MissingBeanException;
 import com.github.ar1ls.weft.definition.BeanDefinition;
 import com.github.ar1ls.weft.definition.BeanKey;
+import com.github.ar1ls.weft.definition.DependencyKind;
 
 import java.util.*;
 
@@ -36,7 +37,7 @@ public class PlanBuilder {
 
         path.add(definition.key());
         try {
-            var arguments = new ArrayList<BeanKey>();
+            var arguments = new ArrayList<ResolvedDependency>();
             for (var dependency : definition.factory().dependencies()) {
                 BeanDefinition target;
                 try {
@@ -45,8 +46,10 @@ public class PlanBuilder {
                     throw new MissingBeanException("Missing dependency: " + this.describePath(path, dependency.type().toString())
                             + " at " + dependency.injectionPoint().description() + " for bean: " + definition.key(), e);
                 }
-                arguments.add(target.key());
-                this.visit(target, resolver, plans, visiting, path);
+                arguments.add(new ResolvedDependency(dependency, target.key()));
+                if (dependency.kind() == DependencyKind.DIRECT) {
+                    this.visit(target, resolver, plans, visiting, path);
+                }
             }
             plans.put(definition.key(), new CreationPlan(definition, arguments));
         } finally {

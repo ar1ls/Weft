@@ -1,8 +1,10 @@
 package com.github.ar1ls.weft.runtime;
 
+import com.github.ar1ls.weft.api.Provider;
 import com.github.ar1ls.weft.api.exception.BeanCreationException;
 import com.github.ar1ls.weft.api.exception.DefinitionException;
 import com.github.ar1ls.weft.definition.BeanDefinition;
+import com.github.ar1ls.weft.definition.DependencyDescriptor;
 import com.github.ar1ls.weft.runtime.factory.ConstructorBeanFactory;
 import lombok.NonNull;
 
@@ -24,8 +26,7 @@ public class BeanCreator {
         }
         for (var index = 0; index < arguments.length; index++) {
             var dependency = dependencies.get(index);
-            if (!(dependency.type().type() instanceof Class<?> argumentType)
-                    || !argumentType.isInstance(arguments[index])) {
+            if (!this.isValidArgument(dependency, arguments[index])) {
                 throw new BeanCreationException("Invalid argument at " + dependency.injectionPoint().description()
                         + " for bean: " + definition.key());
             }
@@ -44,6 +45,17 @@ public class BeanCreator {
             throw new BeanCreationException("Invalid factory result for bean: " + definition.key());
         }
         return bean;
+    }
+
+    private boolean isValidArgument(DependencyDescriptor dependency, Object argument) {
+        if (!(dependency.type().type() instanceof Class<?> type)) {
+            return false;
+        }
+        return switch (dependency.kind()) {
+            case DIRECT -> type.isInstance(argument);
+            case PROVIDER -> argument instanceof Provider<?>;
+            default -> false;
+        };
     }
 
     public <T> T create(Class<T> type) {

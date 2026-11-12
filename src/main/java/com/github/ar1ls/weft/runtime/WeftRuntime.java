@@ -1,6 +1,7 @@
 package com.github.ar1ls.weft.runtime;
 
 import com.github.ar1ls.weft.api.BeanScope;
+import com.github.ar1ls.weft.api.Provider;
 import com.github.ar1ls.weft.api.exception.BeanCreationException;
 import com.github.ar1ls.weft.definition.BeanDefinition;
 import com.github.ar1ls.weft.definition.BeanKey;
@@ -79,10 +80,25 @@ public class WeftRuntime {
     private Object create(CreationPlan plan) {
         var arguments = new Object[plan.arguments().size()];
         for (var index = 0; index < arguments.length; index++) {
-            var dependency = this.plan.beans().get(plan.arguments().get(index));
-            arguments[index] = this.resolve(dependency.definition());
+            var argument = plan.arguments().get(index);
+            var dependency = this.plan.beans().get(argument.target()).definition();
+            arguments[index] = switch (argument.descriptor().kind()) {
+                case DIRECT -> this.resolve(dependency);
+                case PROVIDER -> this.providerFor(dependency);
+                default -> throw new IllegalStateException("Unsupported planned dependency: " + argument.descriptor());
+            };
         }
         return this.creator.create(plan.definition(), arguments);
+    }
+
+    private Provider<?> providerFor(BeanDefinition definition) {
+        return () -> {
+            this.requireOwnerThread();
+            if (this.state != RuntimeState.STARTING && this.state != RuntimeState.RUNNING) {
+                throw new IllegalStateException("Cannot use provider in runtime state: " + this.state);
+            }
+            return this.resolve(definition);
+        };
     }
 
     private void requireOwnerThread() {

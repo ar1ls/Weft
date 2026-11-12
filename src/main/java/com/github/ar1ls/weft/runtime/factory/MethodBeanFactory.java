@@ -1,11 +1,11 @@
 package com.github.ar1ls.weft.runtime.factory;
 
-import com.github.ar1ls.weft.api.annotations.Named;
 import com.github.ar1ls.weft.api.exception.DefinitionException;
 import com.github.ar1ls.weft.definition.DependencyDescriptor;
 import com.github.ar1ls.weft.definition.DependencyKind;
 import com.github.ar1ls.weft.definition.InjectionPoint;
 import com.github.ar1ls.weft.definition.TypeRef;
+import com.github.ar1ls.weft.discovery.InjectionMetadataReader;
 import com.github.ar1ls.weft.spi.BeanFactory;
 import lombok.AccessLevel;
 import lombok.NonNull;
@@ -50,15 +50,7 @@ public class MethodBeanFactory implements BeanFactory {
             dependencies.add(new DependencyDescriptor(TypeRef.of(ownerType), "", DependencyKind.DIRECT,
                     new InjectionPoint(method.toGenericString() + " configuration owner")));
         }
-        var parameters = method.getParameters();
-        for (var index = 0; index < parameters.length; index++) {
-            var parameter = parameters[index];
-            var named = parameter.getAnnotation(Named.class);
-            var name = named == null ? "" : named.value();
-            var point = new InjectionPoint(method.toGenericString() + " parameter " + index);
-            dependencies.add(new DependencyDescriptor(TypeRef.of(parameter.getParameterizedType()), name,
-                    DependencyKind.DIRECT, point));
-        }
+        dependencies.addAll(InjectionMetadataReader.readParameters(method));
         return dependencies;
     }
 
