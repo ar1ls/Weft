@@ -1,12 +1,7 @@
 package com.github.ar1ls.weft.discovery;
 
 import com.github.ar1ls.weft.api.BeanScope;
-import com.github.ar1ls.weft.api.annotations.Bean;
-import com.github.ar1ls.weft.api.annotations.Configuration;
-import com.github.ar1ls.weft.api.annotations.Lazy;
-import com.github.ar1ls.weft.api.annotations.Named;
-import com.github.ar1ls.weft.api.annotations.Primary;
-import com.github.ar1ls.weft.api.annotations.Scope;
+import com.github.ar1ls.weft.api.annotations.*;
 import com.github.ar1ls.weft.api.exception.DefinitionException;
 import com.github.ar1ls.weft.definition.BeanDefinition;
 import com.github.ar1ls.weft.definition.BeanKey;
@@ -69,6 +64,9 @@ public class AnnotationDefinitionReader {
     private BeanDefinition definition(BeanKey key, TypeRef<?> type, AnnotatedElement element, BeanSource source, BeanFactory factory) {
         var scope = element.getAnnotation(Scope.class);
         var named = element.getAnnotation(Named.class);
+        if (named != null && named.value().isBlank()) {
+            throw new DefinitionException("Bean name must not be blank: " + key);
+        }
         var name = named == null ? "" : named.value();
         return new BeanDefinition(key, type, name, scope == null ? BeanScope.SINGLETON : scope.value(),
                 element.isAnnotationPresent(Lazy.class), element.isAnnotationPresent(Primary.class), source, factory);

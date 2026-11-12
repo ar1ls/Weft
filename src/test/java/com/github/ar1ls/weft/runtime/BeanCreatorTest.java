@@ -8,6 +8,8 @@ import com.github.ar1ls.weft.runtime.fixtures.*;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -185,6 +187,30 @@ class BeanCreatorTest {
         assertSame(provider, bean.provider());
         assertEquals(0, calls.get());
         assertThrows(BeanCreationException.class, () -> creator.create(definition, new Object[]{new SimpleBean()}));
+    }
+
+    @Test
+    void rejectsWrongOptionalAndCollectionElementsBeforeCallingFactory() {
+        var creator = new BeanCreator();
+        var calls = new AtomicInteger();
+        for (var kind : List.of(DependencyKind.OPTIONAL, DependencyKind.LIST, DependencyKind.SET)) {
+            var dependency = new DependencyDescriptor(TypeRef.of(SimpleBean.class), "", kind, new InjectionPoint("wrapper argument"));
+            var factory = new TestBeanFactory(List.of(dependency), () -> {
+                calls.incrementAndGet();
+                return new SimpleBean();
+            });
+            var definition = BeanDefinitions.of(SimpleBean.class, factory);
+            var invalid = switch (kind) {
+                case OPTIONAL -> Optional.of("wrong");
+                case LIST -> List.of("wrong");
+                case SET -> Set.of("wrong");
+                default -> throw new IllegalStateException();
+            };
+
+            assertThrows(BeanCreationException.class, () -> creator.create(definition, new Object[]{invalid}));
+            assertThrows(BeanCreationException.class, () -> creator.create(definition, new Object[]{null}));
+        }
+        assertEquals(0, calls.get());
     }
 
 }

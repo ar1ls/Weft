@@ -1,5 +1,6 @@
 package com.github.ar1ls.weft.plan;
 
+import com.github.ar1ls.weft.api.exception.AmbiguousBeanException;
 import com.github.ar1ls.weft.api.exception.DefinitionException;
 import com.github.ar1ls.weft.api.exception.MissingBeanException;
 import com.github.ar1ls.weft.definition.BeanDefinition;
@@ -50,17 +51,24 @@ public class PlanBuilder {
             }
             var resolved = new ArrayList<ResolvedDependency>();
             for (var dependency : dependencies) {
-                BeanDefinition target;
+                List<BeanDefinition> targets;
                 try {
-                    target = resolver.resolve(dependency);
+                    targets = resolver.resolve(dependency);
                 } catch (MissingBeanException e) {
                     throw new MissingBeanException("Missing dependency: " + this.describePath(path, dependency.type().toString())
                             + " at " + dependency.injectionPoint().description() + " for bean: " + definition.key(), e);
+                } catch (AmbiguousBeanException e) {
+                    throw new AmbiguousBeanException("Ambiguous dependency: " + this.describePath(path, dependency.type().toString())
+                            + " for bean: " + definition.key() + "; " + e.getMessage(), e);
                 }
-                resolved.add(new ResolvedDependency(dependency, target.key()));
-                if (dependency.kind() == DependencyKind.DIRECT) {
-                    this.visit(target, resolver, plans, visiting, path);
+                var keys = new ArrayList<BeanKey>();
+                for (var target : targets) {
+                    keys.add(target.key());
+                    if (dependency.kind() != DependencyKind.PROVIDER) {
+                        this.visit(target, resolver, plans, visiting, path);
+                    }
                 }
+                resolved.add(new ResolvedDependency(dependency, keys));
             }
             var resolvedFields = new ArrayList<ResolvedFieldInjection>();
             for (var index = 0; index < fields.size(); index++) {

@@ -5,6 +5,7 @@ import com.github.ar1ls.weft.api.Provider;
 import com.github.ar1ls.weft.api.exception.BeanCreationException;
 import com.github.ar1ls.weft.definition.BeanDefinition;
 import com.github.ar1ls.weft.definition.BeanKey;
+import com.github.ar1ls.weft.definition.DependencyKind;
 import com.github.ar1ls.weft.plan.CreationPlan;
 import com.github.ar1ls.weft.plan.DependencyResolver;
 import com.github.ar1ls.weft.plan.InitializationPlan;
@@ -84,12 +85,16 @@ public class WeftRuntime implements AutoCloseable {
     }
 
     public <T> T get(@NonNull Class<T> type) {
+        return this.get(type, "");
+    }
+
+    public <T> T get(@NonNull Class<T> type, @NonNull String name) {
         this.requireOwnerThread();
         if (this.state != RuntimeState.RUNNING) {
             throw new IllegalStateException("Cannot get bean in runtime state: " + this.state);
         }
 
-        var definition = this.resolver.resolve(type);
+        var definition = this.resolver.resolve(type, name);
         return type.cast(this.resolve(definition));
     }
 
@@ -172,11 +177,20 @@ public class WeftRuntime implements AutoCloseable {
     }
 
     private Object resolveDependency(ResolvedDependency dependency) {
-        var target = this.plan.beans().get(dependency.target()).definition();
+        if (dependency.descriptor().kind() == DependencyKind.PROVIDER) {
+            var target = this.plan.beans().get(dependency.targets().getFirst()).definition();
+            return this.providerFor(target);
+        }
+        var values = new ArrayList<>();
+        for (var key : dependency.targets()) {
+            values.add(this.resolve(this.plan.beans().get(key).definition()));
+        }
         return switch (dependency.descriptor().kind()) {
-            case DIRECT -> this.resolve(target);
-            case PROVIDER -> this.providerFor(target);
-            default -> throw new IllegalStateException("Unsupported planned dependency: " + dependency.descriptor());
+            case DIRECT -> values.getFirst();
+            case OPTIONAL -> values.isEmpty() ? Optional.empty() : Optional.of(values.getFirst());
+            case LIST -> List.copyOf(values);
+            case SET -> Collections.unmodifiableSet(new LinkedHashSet<>(values));
+            case PROVIDER -> throw new IllegalStateException("Provider must be resolved lazily");
         };
     }
 

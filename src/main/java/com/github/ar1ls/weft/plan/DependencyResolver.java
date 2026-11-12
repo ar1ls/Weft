@@ -1,61 +1,93 @@
 package com.github.ar1ls.weft.plan;
 
+import com.github.ar1ls.weft.api.exception.AmbiguousBeanException;
 import com.github.ar1ls.weft.api.exception.DefinitionException;
 import com.github.ar1ls.weft.api.exception.MissingBeanException;
-import com.github.ar1ls.weft.definition.BeanDefinition;
-import com.github.ar1ls.weft.definition.DependencyDescriptor;
-import com.github.ar1ls.weft.definition.DependencyKind;
+import com.github.ar1ls.weft.definition.*;
 import lombok.AccessLevel;
 import lombok.NonNull;
 import lombok.experimental.FieldDefaults;
 
-import java.util.Collection;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.*;
 
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class DependencyResolver {
 
-    Map<Class<?>, BeanDefinition> definitions;
+    List<BeanDefinition> definitions;
 
     public DependencyResolver(@NonNull Collection<BeanDefinition> definitions) {
-        var byType = new LinkedHashMap<Class<?>, BeanDefinition>();
+        var byKey = new LinkedHashMap<BeanKey, BeanDefinition>();
         for (var definition : definitions) {
-            if (!(definition.type().type() instanceof Class<?> type)) {
+            if (!(definition.type().type() instanceof Class<?>)) {
                 throw new DefinitionException("Only class types are supported: " + definition.key());
             }
-            var previous = byType.putIfAbsent(type, definition);
+            var previous = byKey.putIfAbsent(definition.key(), definition);
             if (previous != null) {
-                throw new DefinitionException("Multiple beans for type " + type.getName()
-                        + ": " + previous.key() + " and " + definition.key());
+                throw new DefinitionException("Duplicate bean key: " + definition.key());
             }
         }
-        this.definitions = Collections.unmodifiableMap(byType);
+        this.definitions = List.copyOf(byKey.values());
     }
 
     public Collection<BeanDefinition> definitions() {
-        return this.definitions.values();
+        return this.definitions;
     }
 
     public BeanDefinition resolve(@NonNull Class<?> type) {
-        var definition = this.definitions.get(type);
-        if (definition == null) {
-            throw new MissingBeanException("No bean registered for type: " + type.getName());
-        }
-        return definition;
+        return this.resolve(type, "");
     }
 
-    public BeanDefinition resolve(@NonNull DependencyDescriptor dependency) {
+    public BeanDefinition resolve(@NonNull Class<?> type, @NonNull String name) {
+        var dependency = new DependencyDescriptor(TypeRef.of(type), name, DependencyKind.DIRECT,
+                new InjectionPoint("get(" + type.getName() + ")"));
+        return this.resolve(dependency).getFirst();
+    }
+
+    public List<BeanDefinition> resolve(@NonNull DependencyDescriptor dependency) {
         var point = dependency.injectionPoint().description();
-        if ((dependency.kind() != DependencyKind.DIRECT && dependency.kind() != DependencyKind.PROVIDER)
-                || !dependency.name().isEmpty()) {
-            throw new DefinitionException("Only unnamed direct/provider dependencies are supported at " + point);
-        }
         if (!(dependency.type().type() instanceof Class<?> type)) {
             throw new DefinitionException("Only class dependencies are supported at " + point);
         }
-        return this.resolve(type);
+        var candidates = new ArrayList<BeanDefinition>();
+        for (var definition : this.definitions) {
+            var providedType = (Class<?>) definition.type().type();
+            if (type.isAssignableFrom(providedType)
+                    && (dependency.name().isEmpty() || dependency.name().equals(definition.name()))) {
+                candidates.add(definition);
+            }
+        }
+        candidates.sort(Comparator.comparing((BeanDefinition definition) -> definition.key().sourceId())
+                .thenComparing(definition -> definition.key().localId()));
+        if (dependency.kind() == DependencyKind.LIST || dependency.kind() == DependencyKind.SET) {
+            return List.copyOf(candidates);
+        }
+        if (candidates.isEmpty()) {
+            if (dependency.kind() == DependencyKind.OPTIONAL) {
+                return List.of();
+            }
+            throw new MissingBeanException("No bean registered for type: " + type.getName()
+                    + " with name '" + dependency.name() + "' at " + point);
+        }
+        if (candidates.size() == 1) {
+            return List.of(candidates.getFirst());
+        }
+        BeanDefinition primary = null;
+        var primaryCount = 0;
+        for (var candidate : candidates) {
+            if (candidate.primary()) {
+                primary = candidate;
+                primaryCount++;
+            }
+        }
+        if (primaryCount == 1) {
+            return List.of(primary);
+        }
+        var keys = new StringJoiner(", ");
+        for (var candidate : candidates) {
+            keys.add(candidate.key() + (candidate.primary() ? " [primary]" : ""));
+        }
+        throw new AmbiguousBeanException("Multiple beans for type " + type.getName()
+                + " with name '" + dependency.name() + "' at " + point + ": " + keys);
     }
 
 }

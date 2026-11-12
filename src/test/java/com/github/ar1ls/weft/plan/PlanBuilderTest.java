@@ -67,7 +67,7 @@ class PlanBuilderTest {
         var plan = new PlanBuilder().build(resolver);
 
         var argument = plan.beans().get(consumer.key()).arguments().getFirst();
-        assertEquals(target.key(), argument.target());
+        assertEquals(List.of(target.key()), argument.targets());
         assertEquals(DependencyKind.PROVIDER, argument.descriptor().kind());
         assertEquals(List.of(consumer.key(), target.key()), plan.creationOrder());
     }
@@ -75,7 +75,7 @@ class PlanBuilderTest {
     private List<BeanKey> targets(CreationPlan plan) {
         var targets = new ArrayList<BeanKey>();
         for (var argument : plan.arguments()) {
-            targets.add(argument.target());
+            targets.addAll(argument.targets());
         }
         return targets;
     }

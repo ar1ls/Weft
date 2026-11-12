@@ -9,6 +9,10 @@ import com.github.ar1ls.weft.runtime.factory.ConstructorBeanFactory;
 import lombok.NonNull;
 
 import java.lang.reflect.InvocationTargetException;
+import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 
 public class BeanCreator {
 
@@ -54,8 +58,19 @@ public class BeanCreator {
         return switch (dependency.kind()) {
             case DIRECT -> type.isInstance(argument);
             case PROVIDER -> argument instanceof Provider<?>;
-            default -> false;
+            case OPTIONAL -> argument instanceof Optional<?> optional && (optional.isEmpty() || type.isInstance(optional.get()));
+            case LIST -> argument instanceof List<?> list && this.containsOnly(type, list);
+            case SET -> argument instanceof Set<?> set && this.containsOnly(type, set);
         };
+    }
+
+    private boolean containsOnly(Class<?> type, Collection<?> values) {
+        for (var value : values) {
+            if (!type.isInstance(value)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public <T> T create(Class<T> type) {

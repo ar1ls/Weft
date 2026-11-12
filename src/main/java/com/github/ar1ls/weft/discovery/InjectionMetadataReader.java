@@ -11,15 +11,8 @@ import com.github.ar1ls.weft.definition.TypeRef;
 import lombok.NonNull;
 import lombok.experimental.UtilityClass;
 
-import java.lang.reflect.Executable;
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
-import java.lang.reflect.ParameterizedType;
-import java.lang.reflect.Type;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.List;
+import java.lang.reflect.*;
+import java.util.*;
 
 @UtilityClass
 public class InjectionMetadataReader {
@@ -69,13 +62,24 @@ public class InjectionMetadataReader {
 
     private DependencyDescriptor readDependency(Class<?> rawType, Type type, Named named, InjectionPoint point) {
         var kind = DependencyKind.DIRECT;
-        if (rawType == Provider.class) {
+        if (rawType == Provider.class || rawType == Optional.class || rawType == List.class || rawType == Set.class) {
             if (!(type instanceof ParameterizedType providerType)
                     || !(providerType.getActualTypeArguments()[0] instanceof Class<?>)) {
-                throw new DefinitionException("Provider requires a concrete class argument at " + point.description());
+                throw new DefinitionException(rawType.getSimpleName() + " requires a concrete class argument at " + point.description());
             }
             type = providerType.getActualTypeArguments()[0];
-            kind = DependencyKind.PROVIDER;
+            if (rawType == Provider.class) {
+                kind = DependencyKind.PROVIDER;
+            } else if (rawType == Optional.class) {
+                kind = DependencyKind.OPTIONAL;
+            } else if (rawType == List.class) {
+                kind = DependencyKind.LIST;
+            } else {
+                kind = DependencyKind.SET;
+            }
+        }
+        if (named != null && named.value().isBlank()) {
+            throw new DefinitionException("Named must not be blank at " + point.description());
         }
         var name = named == null ? "" : named.value();
         return new DependencyDescriptor(TypeRef.of(type), name, kind, point);

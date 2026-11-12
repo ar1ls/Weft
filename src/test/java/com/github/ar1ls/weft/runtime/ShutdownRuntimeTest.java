@@ -8,6 +8,7 @@ import com.github.ar1ls.weft.api.exception.ShutdownException;
 import com.github.ar1ls.weft.definition.*;
 import com.github.ar1ls.weft.runtime.factory.SupplierBeanFactory;
 import com.github.ar1ls.weft.runtime.fixtures.*;
+import com.github.ar1ls.weft.spi.BeanFactory;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -26,7 +27,7 @@ class ShutdownRuntimeTest {
                 BeanDefinitions.of(ShutdownConsumer.class, new SupplierBeanFactory(
                         List.of(this.dependency(ShutdownResource.class, DependencyKind.DIRECT)),
                         args -> new ShutdownConsumer((ShutdownResource) args[0], events))),
-                BeanDefinitions.of(ShutdownResource.class, BeanScope.SINGLETON, true,
+                this.primaryResource(BeanScope.SINGLETON, true,
                         new SupplierBeanFactory(() -> new ShutdownResource("resource", events)))
         );
         runtime.start();
@@ -43,7 +44,7 @@ class ShutdownRuntimeTest {
     void closesIndependentBeansInReverseCreationOrderAndAnnotatedCloseOnce() {
         var events = new ArrayList<String>();
         var runtime = this.runtimeFor(
-                BeanDefinitions.of(ShutdownResource.class, new SupplierBeanFactory(() -> new ShutdownResource("resource", events))),
+                this.primaryResource(new SupplierBeanFactory(() -> new ShutdownResource("resource", events))),
                 BeanDefinitions.of(AnnotatedCloseResource.class, new SupplierBeanFactory(() -> new AnnotatedCloseResource(events)))
         );
         runtime.start();
@@ -73,7 +74,7 @@ class ShutdownRuntimeTest {
                         args -> new ShutdownConsumer((ShutdownResource) args[0], events))),
                 BeanDefinitions.of(AutoCloseable.class, new SupplierBeanFactory(
                         List.of(this.dependency(ShutdownResource.class, DependencyKind.DIRECT)), args -> args[0])),
-                BeanDefinitions.of(ShutdownResource.class, new SupplierBeanFactory(() -> new ShutdownResource("resource", events)))
+                this.primaryResource(new SupplierBeanFactory(() -> new ShutdownResource("resource", events)))
         );
         runtime.start();
 
@@ -103,7 +104,7 @@ class ShutdownRuntimeTest {
         var calls = new AtomicInteger();
         var runtime = this.runtimeFor(
                 BeanDefinitions.of(ProviderShutdownConsumer.class, new SupplierBeanFactory(() -> new ProviderShutdownConsumer(events))),
-                BeanDefinitions.of(ShutdownResource.class, BeanScope.SINGLETON, true, new SupplierBeanFactory(() -> {
+                this.primaryResource(BeanScope.SINGLETON, true, new SupplierBeanFactory(() -> {
                     calls.incrementAndGet();
                     return new ShutdownResource("resource", events);
                 }))
@@ -123,7 +124,7 @@ class ShutdownRuntimeTest {
         var runtime = this.runtimeFor(
                 BeanDefinitions.of(ShutdownConsumer.class, BeanScope.SINGLETON, true,
                         new SupplierBeanFactory(() -> new ShutdownConsumer(owner.get().get(ShutdownResource.class), events))),
-                BeanDefinitions.of(ShutdownResource.class, BeanScope.SINGLETON, true,
+                this.primaryResource(BeanScope.SINGLETON, true,
                         new SupplierBeanFactory(() -> new ShutdownResource("resource", events)))
         );
         owner.set(runtime);
@@ -144,7 +145,7 @@ class ShutdownRuntimeTest {
                         args -> new ShutdownConsumer((ProviderShutdownConsumer) args[0], events))),
                 BeanDefinitions.of(ProviderShutdownConsumer.class, BeanScope.PROTOTYPE, false,
                         new SupplierBeanFactory(() -> new ProviderShutdownConsumer(events))),
-                BeanDefinitions.of(ShutdownResource.class, BeanScope.SINGLETON, true,
+                this.primaryResource(BeanScope.SINGLETON, true,
                         new SupplierBeanFactory(() -> new ShutdownResource("resource", events)))
         );
         runtime.start();
@@ -165,7 +166,7 @@ class ShutdownRuntimeTest {
                         List.of(this.dependency(ProviderShutdownConsumer.class, DependencyKind.DIRECT)),
                         args -> new ShutdownConsumer((ProviderShutdownConsumer) args[0], events))),
                 BeanDefinitions.of(ProviderShutdownConsumer.class, new SupplierBeanFactory(() -> new ProviderShutdownConsumer(events))),
-                BeanDefinitions.of(ShutdownResource.class, BeanScope.SINGLETON, true, new SupplierBeanFactory(
+                this.primaryResource(BeanScope.SINGLETON, true, new SupplierBeanFactory(
                         List.of(this.dependency(ProviderShutdownConsumer.class, DependencyKind.PROVIDER)), args -> {
                     backReference.set((Provider<?>) args[0]);
                     return new ShutdownResource("resource", events);
@@ -184,7 +185,7 @@ class ShutdownRuntimeTest {
     @Test
     void successfulPrototypeRemainsOwnedByCaller() {
         var events = new ArrayList<String>();
-        var runtime = this.runtimeFor(BeanDefinitions.of(ShutdownResource.class, BeanScope.PROTOTYPE, false,
+        var runtime = this.runtimeFor(this.primaryResource(BeanScope.PROTOTYPE, false,
                 new SupplierBeanFactory(() -> new ShutdownResource("prototype", events))));
         runtime.start();
         var bean = runtime.get(ShutdownResource.class);
@@ -206,7 +207,7 @@ class ShutdownRuntimeTest {
         bean.setCloseFailure(closeFailure);
         var runtime = this.runtimeFor(
                 BeanDefinitions.of(AnnotatedCloseResource.class, new SupplierBeanFactory(() -> new AnnotatedCloseResource(events))),
-                BeanDefinitions.of(ShutdownResource.class, new SupplierBeanFactory(() -> bean))
+                this.primaryResource(new SupplierBeanFactory(() -> bean))
         );
         runtime.start();
 
@@ -232,7 +233,7 @@ class ShutdownRuntimeTest {
         ready.setDestructionFailure(rollbackFailure);
         var runtime = this.runtimeFor(
                 BeanDefinitions.of(ShutdownChild.class, new SupplierBeanFactory(() -> ready)),
-                BeanDefinitions.of(ShutdownResource.class, new SupplierBeanFactory(() -> bad))
+                this.primaryResource(new SupplierBeanFactory(() -> bad))
         );
 
         var exception = assertThrows(BeanCreationException.class, runtime::start);
@@ -251,7 +252,7 @@ class ShutdownRuntimeTest {
         var bad = new ShutdownResource("bad", events);
         bad.setInitializationFailure(new IllegalStateException("lazy initialization failed"));
         var runtime = this.runtimeFor(
-                BeanDefinitions.of(ShutdownResource.class, BeanScope.SINGLETON, true, new SupplierBeanFactory(() -> bad)),
+                this.primaryResource(BeanScope.SINGLETON, true, new SupplierBeanFactory(() -> bad)),
                 BeanDefinitions.of(AnnotatedCloseResource.class, new SupplierBeanFactory(() -> new AnnotatedCloseResource(events)))
         );
         runtime.start();
@@ -268,7 +269,7 @@ class ShutdownRuntimeTest {
     @Test
     void cleansEachFailedPrototypeAttempt() {
         var events = new ArrayList<String>();
-        var runtime = this.runtimeFor(BeanDefinitions.of(ShutdownResource.class, BeanScope.PROTOTYPE, false,
+        var runtime = this.runtimeFor(this.primaryResource(BeanScope.PROTOTYPE, false,
                 new SupplierBeanFactory(() -> {
                     var bean = new ShutdownResource("bad", events);
                     bean.setInitializationFailure(new IllegalStateException("prototype initialization failed"));
@@ -291,7 +292,7 @@ class ShutdownRuntimeTest {
         var runtime = this.runtimeFor(
                 BeanDefinitions.of(FieldShutdownConsumer.class, BeanScope.SINGLETON, true,
                         new SupplierBeanFactory(() -> new FieldShutdownConsumer(events))),
-                BeanDefinitions.of(ShutdownResource.class, BeanScope.SINGLETON, true, new SupplierBeanFactory(() -> bad)),
+                this.primaryResource(BeanScope.SINGLETON, true, new SupplierBeanFactory(() -> bad)),
                 BeanDefinitions.of(AnnotatedCloseResource.class, new SupplierBeanFactory(() -> new AnnotatedCloseResource(events)))
         );
         runtime.start();
@@ -309,7 +310,7 @@ class ShutdownRuntimeTest {
         var bean = new ProviderShutdownConsumer(events);
         var runtime = this.runtimeFor(
                 BeanDefinitions.of(ProviderShutdownConsumer.class, new SupplierBeanFactory(() -> bean)),
-                BeanDefinitions.of(ShutdownResource.class, BeanScope.SINGLETON, true,
+                this.primaryResource(BeanScope.SINGLETON, true,
                         new SupplierBeanFactory(() -> new ShutdownResource("resource", events)))
         );
         bean.setBeforeDestroy(() -> {
@@ -396,13 +397,22 @@ class ShutdownRuntimeTest {
     private WeftRuntime providerRuntime(List<String> events) {
         return this.runtimeFor(
                 BeanDefinitions.of(ProviderShutdownConsumer.class, new SupplierBeanFactory(() -> new ProviderShutdownConsumer(events))),
-                BeanDefinitions.of(ShutdownResource.class, BeanScope.SINGLETON, true,
+                this.primaryResource(BeanScope.SINGLETON, true,
                         new SupplierBeanFactory(() -> new ShutdownResource("resource", events)))
         );
     }
 
     private DependencyDescriptor dependency(Class<?> type, DependencyKind kind) {
         return new DependencyDescriptor(TypeRef.of(type), "", kind, new InjectionPoint("shutdown fixture"));
+    }
+
+    private BeanDefinition primaryResource(BeanFactory factory) {
+        return this.primaryResource(BeanScope.SINGLETON, false, factory);
+    }
+
+    private BeanDefinition primaryResource(BeanScope scope, boolean lazy, BeanFactory factory) {
+        var base = BeanDefinitions.of(ShutdownResource.class, scope, lazy, factory);
+        return new BeanDefinition(base.key(), base.type(), base.name(), base.scope(), base.lazy(), true, base.source(), base.factory());
     }
 
     private boolean containsCause(Throwable failure, Throwable expected) {

@@ -1,6 +1,7 @@
 package com.github.ar1ls.weft.runtime;
 
 import com.github.ar1ls.weft.api.BeanScope;
+import com.github.ar1ls.weft.api.exception.AmbiguousBeanException;
 import com.github.ar1ls.weft.api.exception.BeanCreationException;
 import com.github.ar1ls.weft.api.exception.DefinitionException;
 import com.github.ar1ls.weft.api.exception.MissingBeanException;
@@ -148,26 +149,28 @@ class WeftRuntimeTest {
     }
 
     @Test
-    void rejectsMultipleDefinitionsForSameType() {
+    void rejectsAmbiguousSameTypeDependencyBeforeStartup() {
         var first = BeanDefinitions.of(SimpleBean.class);
         var key = new BeanKey(first.key().sourceId(), "second-simple-bean");
         var second = new BeanDefinition(key, first.type(), "", first.scope(), false, false,
                 first.source(), first.factory());
 
-        var exception = assertThrows(DefinitionException.class, () -> this.runtimeFor(first, second));
+        var exception = assertThrows(AmbiguousBeanException.class,
+                () -> this.runtimeFor(BeanDefinitions.of(ConstructorDependentBean.class), first, second));
 
         assertTrue(exception.getMessage().contains(first.key().toString()));
         assertTrue(exception.getMessage().contains(second.key().toString()));
     }
 
     @Test
-    void rejectsUnsupportedDependenciesBeforeCreatingAnyBean() {
+    void rejectsUnsupportedGenericDependenciesBeforeCreatingAnyBean() {
         var calls = new AtomicInteger();
         var firstFactory = new TestBeanFactory(List.of(), () -> {
             calls.incrementAndGet();
             return new SimpleBean();
         });
-        var dependency = new DependencyDescriptor(TypeRef.of(SimpleBean.class), "", DependencyKind.OPTIONAL,
+        var type = GenericDependentBean.class.getRecordComponents()[0].getGenericType();
+        var dependency = new DependencyDescriptor(TypeRef.of(type), "", DependencyKind.DIRECT,
                 new InjectionPoint("test factory argument"));
         var secondFactory = new TestBeanFactory(List.of(dependency), Object::new);
 
@@ -341,10 +344,20 @@ class WeftRuntimeTest {
     }
 
     @Test
-    void rejectsNamedAndGenericDependenciesExplicitly() {
-        assertThrows(DefinitionException.class, () -> this.runtimeFor(
+    void namedDependencyDoesNotFallBackToUnnamedBean() {
+        assertThrows(MissingBeanException.class, () -> this.runtimeFor(
                 BeanDefinitions.of(NamedDependentBean.class), BeanDefinitions.of(SimpleBean.class)));
-        assertThrows(DefinitionException.class, () -> this.runtimeFor(BeanDefinitions.of(GenericDependentBean.class)));
+    }
+
+    @Test
+    void injectsTypedListAndAllowsEmptyList() {
+        var empty = this.runtimeFor(BeanDefinitions.of(GenericDependentBean.class));
+        empty.start();
+        assertEquals(List.of(), empty.get(GenericDependentBean.class).dependencies());
+
+        var populated = this.runtimeFor(BeanDefinitions.of(GenericDependentBean.class), BeanDefinitions.of(SimpleBean.class));
+        populated.start();
+        assertEquals(List.of(populated.get(SimpleBean.class)), populated.get(GenericDependentBean.class).dependencies());
     }
 
     private WeftRuntime runtimeFor(BeanDefinition... definitions) {
