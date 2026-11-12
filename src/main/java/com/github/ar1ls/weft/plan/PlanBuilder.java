@@ -5,6 +5,8 @@ import com.github.ar1ls.weft.api.exception.MissingBeanException;
 import com.github.ar1ls.weft.definition.BeanDefinition;
 import com.github.ar1ls.weft.definition.BeanKey;
 import com.github.ar1ls.weft.definition.DependencyKind;
+import com.github.ar1ls.weft.discovery.InjectionMetadataReader;
+import com.github.ar1ls.weft.discovery.LifecycleMetadataReader;
 
 import java.util.*;
 
@@ -37,8 +39,16 @@ public class PlanBuilder {
 
         path.add(definition.key());
         try {
-            var arguments = new ArrayList<ResolvedDependency>();
-            for (var dependency : definition.factory().dependencies()) {
+            var type = (Class<?>) definition.type().type();
+            var fields = InjectionMetadataReader.readFields(type);
+            var postConstruct = LifecycleMetadataReader.readPostConstruct(type);
+            var dependencies = new ArrayList<>(definition.factory().dependencies());
+            var argumentCount = dependencies.size();
+            for (var field : fields) {
+                dependencies.add(field.dependency());
+            }
+            var resolved = new ArrayList<ResolvedDependency>();
+            for (var dependency : dependencies) {
                 BeanDefinition target;
                 try {
                     target = resolver.resolve(dependency);
@@ -46,12 +56,16 @@ public class PlanBuilder {
                     throw new MissingBeanException("Missing dependency: " + this.describePath(path, dependency.type().toString())
                             + " at " + dependency.injectionPoint().description() + " for bean: " + definition.key(), e);
                 }
-                arguments.add(new ResolvedDependency(dependency, target.key()));
+                resolved.add(new ResolvedDependency(dependency, target.key()));
                 if (dependency.kind() == DependencyKind.DIRECT) {
                     this.visit(target, resolver, plans, visiting, path);
                 }
             }
-            plans.put(definition.key(), new CreationPlan(definition, arguments));
+            var resolvedFields = new ArrayList<ResolvedFieldInjection>();
+            for (var index = 0; index < fields.size(); index++) {
+                resolvedFields.add(new ResolvedFieldInjection(fields.get(index).field(), resolved.get(argumentCount + index)));
+            }
+            plans.put(definition.key(), new CreationPlan(definition, resolved.subList(0, argumentCount), resolvedFields, postConstruct));
         } finally {
             path.removeLast();
             visiting.remove(definition.key());

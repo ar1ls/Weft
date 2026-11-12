@@ -9,10 +9,12 @@ import com.github.ar1ls.weft.plan.CreationPlan;
 import com.github.ar1ls.weft.plan.DependencyResolver;
 import com.github.ar1ls.weft.plan.InitializationPlan;
 import com.github.ar1ls.weft.plan.PlanBuilder;
+import com.github.ar1ls.weft.plan.ResolvedDependency;
 import lombok.AccessLevel;
 import lombok.NonNull;
 import lombok.experimental.FieldDefaults;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.*;
 
 @FieldDefaults(level = AccessLevel.PRIVATE)
@@ -80,15 +82,39 @@ public class WeftRuntime {
     private Object create(CreationPlan plan) {
         var arguments = new Object[plan.arguments().size()];
         for (var index = 0; index < arguments.length; index++) {
-            var argument = plan.arguments().get(index);
-            var dependency = this.plan.beans().get(argument.target()).definition();
-            arguments[index] = switch (argument.descriptor().kind()) {
-                case DIRECT -> this.resolve(dependency);
-                case PROVIDER -> this.providerFor(dependency);
-                default -> throw new IllegalStateException("Unsupported planned dependency: " + argument.descriptor());
-            };
+            arguments[index] = this.resolveDependency(plan.arguments().get(index));
         }
-        return this.creator.create(plan.definition(), arguments);
+        var bean = this.creator.create(plan.definition(), arguments);
+        for (var injection : plan.fields()) {
+            var value = this.resolveDependency(injection.dependency());
+            try {
+                injection.field().set(bean, value);
+            } catch (IllegalAccessException | IllegalArgumentException e) {
+                throw new BeanCreationException("Cannot inject field " + injection.field().toGenericString()
+                        + " for bean: " + plan.definition().key(), e);
+            }
+        }
+        for (var hook : plan.postConstruct()) {
+            try {
+                hook.invoke(bean);
+            } catch (InvocationTargetException e) {
+                throw new BeanCreationException("PostConstruct failed at " + hook.toGenericString()
+                        + " for bean: " + plan.definition().key(), e.getCause());
+            } catch (ReflectiveOperationException | IllegalArgumentException e) {
+                throw new BeanCreationException("Cannot invoke PostConstruct " + hook.toGenericString()
+                        + " for bean: " + plan.definition().key(), e);
+            }
+        }
+        return bean;
+    }
+
+    private Object resolveDependency(ResolvedDependency dependency) {
+        var target = this.plan.beans().get(dependency.target()).definition();
+        return switch (dependency.descriptor().kind()) {
+            case DIRECT -> this.resolve(target);
+            case PROVIDER -> this.providerFor(target);
+            default -> throw new IllegalStateException("Unsupported planned dependency: " + dependency.descriptor());
+        };
     }
 
     private Provider<?> providerFor(BeanDefinition definition) {
