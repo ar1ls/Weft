@@ -42,6 +42,7 @@ public class PlanBuilder {
             var type = (Class<?>) definition.type().type();
             var fields = InjectionMetadataReader.readFields(type);
             var postConstruct = LifecycleMetadataReader.readPostConstruct(type);
+            var preDestroy = LifecycleMetadataReader.readPreDestroy(type);
             var dependencies = new ArrayList<>(definition.factory().dependencies());
             var argumentCount = dependencies.size();
             for (var field : fields) {
@@ -65,7 +66,7 @@ public class PlanBuilder {
             for (var index = 0; index < fields.size(); index++) {
                 resolvedFields.add(new ResolvedFieldInjection(fields.get(index).field(), resolved.get(argumentCount + index)));
             }
-            plans.put(definition.key(), new CreationPlan(definition, resolved.subList(0, argumentCount), resolvedFields, postConstruct));
+            plans.put(definition.key(), new CreationPlan(definition, resolved.subList(0, argumentCount), resolvedFields, postConstruct, preDestroy));
         } finally {
             path.removeLast();
             visiting.remove(definition.key());

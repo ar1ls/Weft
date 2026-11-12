@@ -11,7 +11,8 @@ public record CreationPlan(
         @NonNull BeanDefinition definition,
         List<ResolvedDependency> arguments,
         List<ResolvedFieldInjection> fields,
-        List<Method> postConstruct
+        List<Method> postConstruct,
+        List<Method> preDestroy
 ) {
 
     public CreationPlan {
@@ -19,6 +20,7 @@ public record CreationPlan(
         arguments = List.copyOf(arguments);
         fields = List.copyOf(fields);
         postConstruct = List.copyOf(postConstruct);
+        preDestroy = List.copyOf(preDestroy);
     }
 
 }

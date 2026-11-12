@@ -18,6 +18,12 @@ public class SingletonStore {
     Map<BeanKey, Throwable> failures = new LinkedHashMap<>();
     Set<BeanKey> creating = new HashSet<>();
 
+    void clear() {
+        this.instances.clear();
+        this.failures.clear();
+        this.creating.clear();
+    }
+
     Object getOrCreate(BeanKey key, Supplier<?> factory) {
         var existing = this.instances.get(key);
         if (existing != null) {

@@ -1,10 +1,12 @@
 package com.github.ar1ls.weft.discovery;
 
 import com.github.ar1ls.weft.api.annotations.PostConstruct;
+import com.github.ar1ls.weft.api.annotations.PreDestroy;
 import com.github.ar1ls.weft.api.exception.DefinitionException;
 import lombok.NonNull;
 import lombok.experimental.UtilityClass;
 
+import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
@@ -14,21 +16,30 @@ import java.util.List;
 public class LifecycleMetadataReader {
 
     public List<Method> readPostConstruct(@NonNull Class<?> type) {
+        return readHooks(type, PostConstruct.class);
+    }
+
+    public List<Method> readPreDestroy(@NonNull Class<?> type) {
+        return List.copyOf(readHooks(type, PreDestroy.class).reversed());
+    }
+
+    private List<Method> readHooks(Class<?> type, Class<? extends Annotation> annotation) {
         var hierarchy = InjectionMetadataReader.hierarchy(type);
         var hooks = new ArrayList<Method>();
+        var name = annotation.getSimpleName();
         for (var index = 0; index < hierarchy.size(); index++) {
             Method hook = null;
             for (var method : hierarchy.get(index).getDeclaredMethods()) {
-                if (method.isBridge() || method.isSynthetic() || !method.isAnnotationPresent(PostConstruct.class)) {
+                if (method.isBridge() || method.isSynthetic() || !method.isAnnotationPresent(annotation)) {
                     continue;
                 }
                 if (Modifier.isStatic(method.getModifiers()) || Modifier.isAbstract(method.getModifiers())
                         || method.getParameterCount() != 0 || method.getReturnType() != void.class) {
-                    throw new DefinitionException("PostConstruct must be a concrete nonstatic void method without arguments: "
+                    throw new DefinitionException(name + " must be a concrete nonstatic void method without arguments: "
                             + method.toGenericString());
                 }
                 if (hook != null) {
-                    throw new DefinitionException("Multiple PostConstruct methods in: " + hierarchy.get(index).getName());
+                    throw new DefinitionException("Multiple " + name + " methods in: " + hierarchy.get(index).getName());
                 }
                 hook = method;
             }
@@ -36,7 +47,7 @@ public class LifecycleMetadataReader {
                 continue;
             }
             if (!hook.trySetAccessible()) {
-                throw new DefinitionException("Cannot access PostConstruct method: " + hook.toGenericString());
+                throw new DefinitionException("Cannot access " + name + " method: " + hook.toGenericString());
             }
             hooks.add(hook);
         }

@@ -18,13 +18,15 @@ import java.lang.reflect.InvocationTargetException;
 import java.util.*;
 
 @FieldDefaults(level = AccessLevel.PRIVATE)
-public class WeftRuntime {
+public class WeftRuntime implements AutoCloseable {
 
     final DependencyResolver resolver;
     final InitializationPlan plan;
     final BeanCreator creator = new BeanCreator();
     final SingletonStore singletons = new SingletonStore();
+    final ShutdownCoordinator shutdown = new ShutdownCoordinator();
     final Set<BeanKey> creatingPrototypes = new HashSet<>();
+    final List<BeanKey> creatingBeans = new ArrayList<>();
     final Thread ownerThread = Thread.currentThread();
 
     RuntimeState state = RuntimeState.NEW;
@@ -50,8 +52,34 @@ public class WeftRuntime {
             }
             this.state = RuntimeState.RUNNING;
         } catch (RuntimeException | Error e) {
-            this.state = RuntimeState.FAILED;
+            this.state = RuntimeState.CLOSING;
+            try {
+                this.shutdown.close();
+            } catch (RuntimeException | Error cleanup) {
+                e.addSuppressed(cleanup);
+            } finally {
+                this.singletons.clear();
+                this.state = RuntimeState.FAILED;
+            }
             throw e;
+        }
+    }
+
+    @Override
+    public void close() {
+        this.requireOwnerThread();
+        if (this.state == RuntimeState.CLOSED || this.state == RuntimeState.CLOSING) {
+            return;
+        }
+        if (this.state == RuntimeState.STARTING || !this.creatingBeans.isEmpty()) {
+            throw new IllegalStateException("Cannot close runtime during bean creation");
+        }
+        this.state = RuntimeState.CLOSING;
+        try {
+            this.shutdown.close();
+        } finally {
+            this.singletons.clear();
+            this.state = RuntimeState.CLOSED;
         }
     }
 
@@ -66,6 +94,9 @@ public class WeftRuntime {
     }
 
     private Object resolve(BeanDefinition definition) {
+        if (!this.creatingBeans.isEmpty()) {
+            this.shutdown.recordDependency(this.creatingBeans.getLast(), definition.key());
+        }
         if (definition.scope() == BeanScope.PROTOTYPE) {
             if (!this.creatingPrototypes.add(definition.key())) {
                 throw new BeanCreationException("Circular prototype creation: " + definition.key());
@@ -80,11 +111,44 @@ public class WeftRuntime {
     }
 
     private Object create(CreationPlan plan) {
+        this.creatingBeans.add(plan.definition().key());
+        try {
+            return this.instantiate(plan);
+        } finally {
+            this.creatingBeans.removeLast();
+        }
+    }
+
+    private Object instantiate(CreationPlan plan) {
         var arguments = new Object[plan.arguments().size()];
         for (var index = 0; index < arguments.length; index++) {
             arguments[index] = this.resolveDependency(plan.arguments().get(index));
         }
         var bean = this.creator.create(plan.definition(), arguments);
+        try {
+            this.initialize(plan, bean);
+        } catch (RuntimeException | Error e) {
+            var previousState = this.state;
+            this.state = RuntimeState.CLOSING;
+            try {
+                var cleanup = this.shutdown.destroyFailed(new ManagedBean(plan, bean));
+                if (cleanup != null) {
+                    e.addSuppressed(cleanup);
+                }
+            } catch (RuntimeException | Error cleanup) {
+                e.addSuppressed(cleanup);
+            } finally {
+                this.state = previousState;
+            }
+            throw e;
+        }
+        if (plan.definition().scope() == BeanScope.SINGLETON) {
+            this.shutdown.track(new ManagedBean(plan, bean));
+        }
+        return bean;
+    }
+
+    private void initialize(CreationPlan plan, Object bean) {
         for (var injection : plan.fields()) {
             var value = this.resolveDependency(injection.dependency());
             try {
@@ -105,7 +169,6 @@ public class WeftRuntime {
                         + " for bean: " + plan.definition().key(), e);
             }
         }
-        return bean;
     }
 
     private Object resolveDependency(ResolvedDependency dependency) {
@@ -118,11 +181,13 @@ public class WeftRuntime {
     }
 
     private Provider<?> providerFor(BeanDefinition definition) {
+        var consumer = this.creatingBeans.getLast();
         return () -> {
             this.requireOwnerThread();
             if (this.state != RuntimeState.STARTING && this.state != RuntimeState.RUNNING) {
                 throw new IllegalStateException("Cannot use provider in runtime state: " + this.state);
             }
+            this.shutdown.recordDependency(consumer, definition.key());
             return this.resolve(definition);
         };
     }
