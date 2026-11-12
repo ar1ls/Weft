@@ -1,8 +1,10 @@
 package com.github.ar1ls.weft.discovery;
 
 import com.github.ar1ls.weft.api.Provider;
+import com.github.ar1ls.weft.api.annotations.Env;
 import com.github.ar1ls.weft.api.annotations.Inject;
 import com.github.ar1ls.weft.api.annotations.Named;
+import com.github.ar1ls.weft.api.annotations.Property;
 import com.github.ar1ls.weft.api.exception.DefinitionException;
 import com.github.ar1ls.weft.definition.DependencyDescriptor;
 import com.github.ar1ls.weft.definition.DependencyKind;
@@ -23,6 +25,9 @@ public class InjectionMetadataReader {
         for (var index = 0; index < parameters.length; index++) {
             var parameter = parameters[index];
             var point = new InjectionPoint(executable.toGenericString() + " parameter " + index);
+            if (parameter.isAnnotationPresent(Property.class) || parameter.isAnnotationPresent(Env.class)) {
+                throw new DefinitionException("Property/Env parameters are not supported yet at " + point.description() + "; use fields");
+            }
             var named = parameter.getAnnotation(Named.class);
             dependencies.add(readDependency(parameter.getType(), parameter.getParameterizedType(), named, point));
         }

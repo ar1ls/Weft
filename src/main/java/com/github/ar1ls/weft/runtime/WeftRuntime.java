@@ -11,6 +11,8 @@ import com.github.ar1ls.weft.plan.DependencyResolver;
 import com.github.ar1ls.weft.plan.InitializationPlan;
 import com.github.ar1ls.weft.plan.PlanBuilder;
 import com.github.ar1ls.weft.plan.ResolvedDependency;
+import com.github.ar1ls.weft.properties.PropertiesBinder;
+import com.github.ar1ls.weft.properties.PropertyResolver;
 import lombok.AccessLevel;
 import lombok.NonNull;
 import lombok.experimental.FieldDefaults;
@@ -33,8 +35,16 @@ public class WeftRuntime implements AutoCloseable {
     RuntimeState state = RuntimeState.NEW;
 
     public WeftRuntime(@NonNull BeanRegistry registry) {
+        this(registry, Map.of());
+    }
+
+    public WeftRuntime(BeanRegistry registry, Map<String, String> properties) {
+        this(registry, new PropertyResolver(properties));
+    }
+
+    public WeftRuntime(@NonNull BeanRegistry registry, @NonNull PropertyResolver properties) {
         this.resolver = new DependencyResolver(registry.freeze().values());
-        this.plan = new PlanBuilder().build(this.resolver);
+        this.plan = new PlanBuilder().build(this.resolver, properties);
     }
 
     public void start() {
@@ -154,6 +164,7 @@ public class WeftRuntime implements AutoCloseable {
     }
 
     private void initialize(CreationPlan plan, Object bean) {
+        PropertiesBinder.bind(plan.properties(), bean);
         for (var injection : plan.fields()) {
             var value = this.resolveDependency(injection.dependency());
             try {

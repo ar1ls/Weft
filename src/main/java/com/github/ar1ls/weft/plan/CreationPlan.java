@@ -1,6 +1,7 @@
 package com.github.ar1ls.weft.plan;
 
 import com.github.ar1ls.weft.definition.BeanDefinition;
+import com.github.ar1ls.weft.properties.BindingPlan;
 import lombok.NonNull;
 
 import java.lang.reflect.Method;
@@ -12,7 +13,8 @@ public record CreationPlan(
         List<ResolvedDependency> arguments,
         List<ResolvedFieldInjection> fields,
         List<Method> postConstruct,
-        List<Method> preDestroy
+        List<Method> preDestroy,
+        @NonNull BindingPlan properties
 ) {
 
     public CreationPlan {
