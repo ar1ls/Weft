@@ -2,6 +2,7 @@ package com.github.ar1ls.weft.discovery;
 
 import com.github.ar1ls.weft.api.exception.BeanScannerException;
 import com.github.ar1ls.weft.discovery.fixtures.AnnotatedBean;
+import com.github.ar1ls.weft.discovery.fixtures.configurations.AnnotatedConfiguration;
 import lombok.AccessLevel;
 import lombok.experimental.FieldDefaults;
 import org.junit.jupiter.api.Test;
@@ -35,6 +36,13 @@ class BeanScannerTest {
     void findsAnnotatedClassesInPackage() throws Exception {
         var found = this.scanner.scan(testRoot(), BeanScannerTest.class.getClassLoader(), FIXTURES);
         assertTrue(simpleNames(found).contains("AnnotatedBean"));
+    }
+
+    @Test
+    void findsConfigurationWithoutBeanAnnotation() throws Exception {
+        var found = this.scanner.scan(testRoot(), BeanScannerTest.class.getClassLoader(), FIXTURES + ".configurations");
+
+        assertEquals(List.of(AnnotatedConfiguration.class), found);
     }
 
     @Test

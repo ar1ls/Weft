@@ -1,6 +1,7 @@
 package com.github.ar1ls.weft.discovery;
 
 import com.github.ar1ls.weft.api.annotations.Bean;
+import com.github.ar1ls.weft.api.annotations.Configuration;
 import com.github.ar1ls.weft.api.exception.BeanScannerException;
 import lombok.NonNull;
 
@@ -37,7 +38,7 @@ public class BeanScanner {
                     .filter(name -> this.matchesPackage(name, packageName))
                     .filter(name -> !this.matchesAny(name, excludePackages))
                     .map(name -> this.loadClass(name, classLoader))
-                    .filter(c -> c.isAnnotationPresent(Bean.class))
+                    .filter(c -> c.isAnnotationPresent(Bean.class) || c.isAnnotationPresent(Configuration.class))
                     .filter(c -> !c.isInterface() && !Modifier.isAbstract(c.getModifiers()))
                     .sorted(Comparator.comparing(Class::getName))
                     .collect(Collectors.toList());
