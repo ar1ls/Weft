@@ -3,6 +3,7 @@ package com.github.ar1ls.weft.runtime;
 import com.github.ar1ls.weft.api.exception.BeanCreationException;
 import com.github.ar1ls.weft.runtime.fixtures.NoDefaultConstructorBean;
 import com.github.ar1ls.weft.runtime.fixtures.SimpleBean;
+import com.github.ar1ls.weft.runtime.fixtures.ThrowingConstructorBean;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -32,6 +33,16 @@ class BeanCreatorTest {
         var first = creator.create(SimpleBean.class);
         var second = creator.create(SimpleBean.class);
         assertNotSame(first, second);
+    }
+
+    @Test
+    void preservesConstructorFailureCause() {
+        var creator = new BeanCreator();
+        var exception = assertThrows(BeanCreationException.class,
+                () -> creator.create(ThrowingConstructorBean.class));
+        assertTrue(exception.getMessage().contains(ThrowingConstructorBean.class.getName()));
+        var cause = assertInstanceOf(IllegalStateException.class, exception.getCause());
+        assertEquals("Constructor probe", cause.getMessage());
     }
 
 }
