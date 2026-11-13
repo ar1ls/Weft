@@ -2,6 +2,7 @@ package com.github.ar1ls.weft.discovery;
 
 import com.github.ar1ls.weft.api.BeanScope;
 import com.github.ar1ls.weft.api.annotations.*;
+import com.github.ar1ls.weft.api.annotations.condition.ConditionalOnMissingBean;
 import com.github.ar1ls.weft.api.exception.DefinitionException;
 import com.github.ar1ls.weft.definition.BeanDefinition;
 import com.github.ar1ls.weft.definition.BeanKey;
@@ -19,11 +20,7 @@ import lombok.experimental.FieldDefaults;
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class AnnotationDefinitionReader {
@@ -46,6 +43,9 @@ public class AnnotationDefinitionReader {
 
         if (!ConditionEvaluator.matches(type, this.properties)) {
             return List.of();
+        }
+        if (configuration && type.isAnnotationPresent(ConditionalOnMissingBean.class)) {
+            throw new DefinitionException("@ConditionalOnMissingBean on @Configuration is not supported; use @Bean methods: " + type.getName());
         }
 
         var definitions = new ArrayList<BeanDefinition>();
@@ -91,8 +91,26 @@ public class AnnotationDefinitionReader {
             throw new DefinitionException("Bean name must not be blank: " + key);
         }
         var name = named == null ? "" : named.value();
+        List<Class<?>> missingTypes = getMissingTypes(key, type, element);
         return new BeanDefinition(key, type, name, scope == null ? BeanScope.SINGLETON : scope.value(),
-                element.isAnnotationPresent(Lazy.class), element.isAnnotationPresent(Primary.class), source, factory);
+                element.isAnnotationPresent(Lazy.class), element.isAnnotationPresent(Primary.class), source, factory, missingTypes);
+    }
+
+    private static @NonNull List<Class<?>> getMissingTypes(BeanKey key, TypeRef<?> type, AnnotatedElement element) {
+        var missing = element.getAnnotation(ConditionalOnMissingBean.class);
+        List<Class<?>> missingTypes = List.of();
+        if (missing != null) {
+            if (!(type.type() instanceof Class<?> declaredType) || declaredType.isPrimitive()) {
+                throw new DefinitionException("Fallback requires a reference Class type: " + key);
+            }
+            missingTypes = missing.value().length == 0 ? List.of(declaredType) : List.of(missing.value());
+            for (var contract : missingTypes) {
+                if (!contract.isAssignableFrom(declaredType)) {
+                    throw new DefinitionException("Fallback type must implement " + contract.getName() + ": " + key);
+                }
+            }
+        }
+        return missingTypes;
     }
 
 }

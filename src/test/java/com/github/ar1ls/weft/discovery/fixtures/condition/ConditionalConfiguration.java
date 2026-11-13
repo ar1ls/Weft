@@ -4,10 +4,17 @@ import com.github.ar1ls.weft.api.Provider;
 import com.github.ar1ls.weft.api.annotations.Bean;
 import com.github.ar1ls.weft.api.annotations.Configuration;
 import com.github.ar1ls.weft.api.annotations.condition.ConditionalOnProperty;
+import com.github.ar1ls.weft.api.annotations.condition.ConditionalOnMissingBean;
 
 @Configuration
 @ConditionalOnProperty(prefix = "app", name = "enabled")
 public class ConditionalConfiguration {
+
+    @Bean
+    @ConditionalOnMissingBean
+    public String fallback() {
+        return "fallback";
+    }
 
     @Bean
     @ConditionalOnProperty(prefix = "app", name = "mode", havingValue = "dev")

@@ -60,13 +60,18 @@ class ConditionEvaluatorTest {
     }
 
     @Test
-    void rejectsMalformedAndUnsupportedConditionsWithLocation() throws Exception {
-        for (var name : new String[]{"emptyNames", "blankName", "fallback"}) {
+    void rejectsMalformedConditionsWithLocation() throws Exception {
+        for (var name : new String[]{"emptyNames", "blankName"}) {
             var method = ConditionSamples.class.getMethod(name);
             var failure = assertThrows(DefinitionException.class,
                     () -> ConditionEvaluator.matches(method, new PropertyResolver(Map.of(), Map.of(), Map.of())));
             assertTrue(failure.getMessage().contains(name));
         }
+    }
+
+    @Test
+    void leavesMissingBeanConditionForRegistrySelection() throws Exception {
+        assertTrue(this.matches("fallback", Map.of()));
     }
 
     private boolean matches(String method, Map<String, String> properties) throws Exception {

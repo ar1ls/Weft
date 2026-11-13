@@ -1,7 +1,6 @@
 package com.github.ar1ls.weft.discovery;
 
 import com.github.ar1ls.weft.api.annotations.condition.ConditionalOnEnv;
-import com.github.ar1ls.weft.api.annotations.condition.ConditionalOnMissingBean;
 import com.github.ar1ls.weft.api.annotations.condition.ConditionalOnProperty;
 import com.github.ar1ls.weft.api.exception.DefinitionException;
 import com.github.ar1ls.weft.spi.PropertySource;
@@ -14,9 +13,6 @@ import java.lang.reflect.AnnotatedElement;
 public class ConditionEvaluator {
 
     public boolean matches(@NonNull AnnotatedElement element, @NonNull PropertySource properties) {
-        if (element.isAnnotationPresent(ConditionalOnMissingBean.class)) {
-            throw new DefinitionException("@ConditionalOnMissingBean is not supported yet: " + element);
-        }
         var property = element.getAnnotation(ConditionalOnProperty.class);
         var env = element.getAnnotation(ConditionalOnEnv.class);
         if (property != null) {

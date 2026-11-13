@@ -3,6 +3,7 @@ package com.github.ar1ls.weft.runtime;
 import com.github.ar1ls.weft.api.exception.DefinitionException;
 import com.github.ar1ls.weft.definition.BeanDefinition;
 import com.github.ar1ls.weft.definition.BeanKey;
+import com.github.ar1ls.weft.plan.FallbackSelector;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.experimental.FieldDefaults;
@@ -31,6 +32,14 @@ public class BeanRegistry {
     }
 
     public Map<BeanKey, BeanDefinition> freeze() {
+        if (this.frozen) {
+            return this.definitions();
+        }
+        var active = FallbackSelector.select(this.definitions.values());
+        this.definitions.clear();
+        for (var definition : active) {
+            this.definitions.put(definition.key(), definition);
+        }
         this.frozen = true;
         return this.definitions();
     }
