@@ -11,4 +11,5 @@ public record BeanKey(String sourceId, String localId) {
             throw new IllegalArgumentException("Bean key parts must not be blank");
         }
     }
+
 }

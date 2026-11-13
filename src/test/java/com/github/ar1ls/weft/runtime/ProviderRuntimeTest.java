@@ -168,18 +168,17 @@ class ProviderRuntimeTest {
     }
 
     @Test
-    void rejectsProviderCallsFromAnotherThread() {
+    void allowsProviderCallsFromAnotherThread() {
         var calls = new AtomicInteger();
         var runtime = this.runtimeFor(BeanDefinitions.of(ProviderDependentBean.class),
                 this.countedTarget(BeanScope.SINGLETON, true, calls));
         runtime.start();
         var provider = runtime.get(ProviderDependentBean.class).provider();
 
-        var exception = CompletableFuture.supplyAsync(() ->
-                assertThrows(IllegalStateException.class, provider::get)).join();
-
-        assertTrue(exception.getMessage().contains("owner thread"));
-        assertEquals(0, calls.get());
+        var bean = CompletableFuture.supplyAsync(provider::get).join();
+        assertSame(runtime.get(SimpleBean.class), bean);
+        assertEquals(1, calls.get());
+        runtime.close();
     }
 
     @Test

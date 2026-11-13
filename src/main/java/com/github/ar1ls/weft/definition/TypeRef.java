@@ -19,6 +19,16 @@ public record TypeRef<T>(Type type) {
         return new TypeRef<>(type);
     }
 
+    public static <T> TypeRef<T> parameterized(Class<?> raw, TypeRef<?>... arguments) {
+        var types = new Type[arguments.length];
+        for (var index = 0; index < types.length; index++) {
+            types[index] = arguments[index].type();
+        }
+        var result = new ParameterizedTypeValue(raw, raw.getDeclaringClass(), types);
+        Types.validate(result);
+        return new TypeRef<>(result);
+    }
+
     @Override
     public @NonNull String toString() {
         return this.type.getTypeName();

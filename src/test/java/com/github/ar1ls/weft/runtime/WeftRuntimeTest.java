@@ -163,7 +163,7 @@ class WeftRuntimeTest {
     }
 
     @Test
-    void rejectsUnsupportedGenericDependenciesBeforeCreatingAnyBean() {
+    void rejectsMissingParameterizedBeanBeforeCreatingAnyBean() {
         var calls = new AtomicInteger();
         var firstFactory = new TestBeanFactory(List.of(), () -> {
             calls.incrementAndGet();
@@ -174,7 +174,7 @@ class WeftRuntimeTest {
                 new InjectionPoint("test factory argument"));
         var secondFactory = new TestBeanFactory(List.of(dependency), Object::new);
 
-        assertThrows(DefinitionException.class, () -> this.runtimeFor(
+        assertThrows(MissingBeanException.class, () -> this.runtimeFor(
                 BeanDefinitions.of(SimpleBean.class, firstFactory),
                 BeanDefinitions.of(Object.class, secondFactory)));
         assertEquals(0, calls.get());
@@ -210,14 +210,13 @@ class WeftRuntimeTest {
     }
 
     @Test
-    void rejectsRequestsFromAnotherThread() {
+    void allowsRequestsFromAnotherThread() {
         var runtime = this.runtimeFor(BeanDefinitions.of(SimpleBean.class));
         runtime.start();
 
-        var exception = CompletableFuture.supplyAsync(() ->
-                assertThrows(IllegalStateException.class, () -> runtime.get(SimpleBean.class))).join();
-
-        assertTrue(exception.getMessage().contains("owner thread"));
+        var bean = CompletableFuture.supplyAsync(() -> runtime.get(SimpleBean.class)).join();
+        assertSame(runtime.get(SimpleBean.class), bean);
+        runtime.close();
     }
 
     @Test

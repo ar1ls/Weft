@@ -8,6 +8,7 @@ import com.github.ar1ls.weft.definition.BeanSource;
 import com.github.ar1ls.weft.definition.TypeRef;
 import com.github.ar1ls.weft.runtime.BeanRegistry;
 import com.github.ar1ls.weft.runtime.factory.SupplierBeanFactory;
+import com.github.ar1ls.weft.runtime.fixtures.fallback.FallbackConfiguration;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -16,6 +17,24 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class FallbackSelectorTest {
+
+    @Test
+    void configurationResultTypeDoesNotTurnAnOrdinaryFallbackIntoAGroup() {
+        var configuration = this.definition("configuration-result", FallbackConfiguration.class, List.of(Object.class));
+        var other = this.definition("other-result", String.class, List.of(Object.class));
+        var failure = assertThrows(DefinitionException.class, () -> FallbackSelector.select(List.of(configuration, other)));
+        assertTrue(failure.getMessage().contains("Conflicting fallback definitions"));
+        assertTrue(failure.getMessage().contains(configuration.key().toString()));
+        assertTrue(failure.getMessage().contains(other.key().toString()));
+    }
+
+    @Test
+    void rejectsUnknownConditionalConfigurationOwner() {
+        var product = this.definition("product", Runnable.class, List.of());
+        var invalid = new BeanDefinition(product.key(), product.type(), product.name(), product.scope(), product.lazy(),
+                product.primary(), product.source(), product.factory(), product.missingTypes(), new BeanKey(product.source().id(), "missing-owner"));
+        assertThrows(DefinitionException.class, () -> FallbackSelector.select(List.of(invalid)));
+    }
 
     @Test
     void selectsFallbackOnlyWhenNoOrdinaryAssignableTypeExists() {

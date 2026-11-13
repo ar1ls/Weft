@@ -1,13 +1,11 @@
 package com.github.ar1ls.weft.properties;
 
-import com.github.ar1ls.weft.api.annotations.Env;
-import com.github.ar1ls.weft.api.annotations.Inject;
-import com.github.ar1ls.weft.api.annotations.Named;
+import com.github.ar1ls.weft.api.annotations.*;
 import com.github.ar1ls.weft.api.annotations.Properties;
-import com.github.ar1ls.weft.api.annotations.Property;
 import com.github.ar1ls.weft.api.exception.BeanCreationException;
 import com.github.ar1ls.weft.api.exception.DefinitionException;
 import com.github.ar1ls.weft.api.exception.PropertyBindingException;
+import com.github.ar1ls.weft.definition.Types;
 import com.github.ar1ls.weft.discovery.InjectionMetadataReader;
 import com.github.ar1ls.weft.spi.PropertySource;
 import lombok.NonNull;
@@ -15,17 +13,29 @@ import lombok.experimental.UtilityClass;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.Optional;
+import java.lang.reflect.Type;
+import java.util.*;
 
 @UtilityClass
 public class PropertiesBinder {
 
     public BindingPlan plan(@NonNull Class<?> type, @NonNull PropertySource properties) {
+        return plan((Type) type, properties);
+    }
+
+    public BindingPlan plan(@NonNull Type context, @NonNull PropertySource properties) {
+        var type = Types.raw(context);
         var configuration = findConfiguration(type);
         var prefix = configuration == null ? "" : configuration.value().strip();
+        return plan(context, properties, prefix);
+    }
+
+    public BindingPlan plan(Type context, PropertySource properties, String prefix) {
+        var type = Types.raw(context);
+        if (type.isRecord()) {
+            return new BindingPlan(List.of());
+        }
+        var configuration = findConfiguration(type);
         var bindings = new ArrayList<PropertyBinding>();
         for (var owner : InjectionMetadataReader.hierarchy(type)) {
             var fields = owner.getDeclaredFields();
@@ -44,11 +54,11 @@ public class PropertiesBinder {
                 if (localKey.isBlank() || key.isBlank()) {
                     throw new DefinitionException("Property key must not be blank at " + field.toGenericString());
                 }
-                DefaultValueConverter.requireSupported(key, field.getType());
                 if (!field.trySetAccessible()) {
                     throw new DefinitionException("Cannot access property field: " + field.toGenericString());
                 }
                 var value = properties.find(key);
+                var fieldType = Types.member(context, owner, field.getGenericType());
                 if (value.isEmpty()) {
                     value = defaultValue(property, env);
                 }
@@ -56,11 +66,18 @@ public class PropertiesBinder {
                     if (env != null && !env.required()) {
                         continue;
                     }
+                    var valueType = Types.raw(fieldType);
+                    if (valueType.isRecord() || valueType.isAnnotationPresent(Properties.class)) {
+                        var nested = valueType.isRecord() ? RecordProperties.plan(fieldType, key, properties)
+                                : NestedProperties.plan(fieldType, key, properties);
+                        bindings.add(new PropertyBinding(field, key, nested));
+                        continue;
+                    }
                     throw new PropertyBindingException("Missing property '" + key + "' at " + field.toGenericString());
                 }
                 Object converted;
                 try {
-                    converted = DefaultValueConverter.convert(key, value.get(), field.getType());
+                    converted = DefaultValueConverter.convert(key, value.get(), fieldType);
                 } catch (PropertyBindingException e) {
                     throw new PropertyBindingException(e.getMessage() + " at " + field.toGenericString());
                 }
@@ -73,7 +90,7 @@ public class PropertiesBinder {
     public void bind(@NonNull BindingPlan plan, @NonNull Object bean) {
         for (var binding : plan.fields()) {
             try {
-                binding.field().set(bean, binding.value());
+                binding.field().set(bean, PreparedProperty.materialize(binding.value()));
             } catch (IllegalAccessException | IllegalArgumentException e) {
                 throw new BeanCreationException("Cannot bind property '" + binding.key() + "' at " + binding.field().toGenericString(), e);
             }

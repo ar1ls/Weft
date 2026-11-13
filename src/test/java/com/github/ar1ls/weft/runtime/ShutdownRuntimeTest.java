@@ -374,7 +374,7 @@ class ShutdownRuntimeTest {
     }
 
     @Test
-    void rejectsCloseFromAnotherThread() throws Exception {
+    void allowsCloseFromAnotherThread() throws Exception {
         var runtime = this.runtimeFor();
         runtime.start();
         var failure = new AtomicReference<Throwable>();
@@ -390,7 +390,8 @@ class ShutdownRuntimeTest {
         thread.join(1000);
 
         assertFalse(thread.isAlive());
-        assertInstanceOf(IllegalStateException.class, failure.get());
+        assertNull(failure.get());
+        assertTrue(runtime.isClosed());
         runtime.close();
     }
 

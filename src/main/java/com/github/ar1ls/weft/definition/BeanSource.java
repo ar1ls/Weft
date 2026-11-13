@@ -11,4 +11,5 @@ public record BeanSource(String id, ClassLoader classLoader) {
             throw new IllegalArgumentException("Bean source id must not be blank");
         }
     }
+
 }

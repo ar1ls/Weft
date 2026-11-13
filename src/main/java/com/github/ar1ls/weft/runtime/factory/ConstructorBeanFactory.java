@@ -3,30 +3,36 @@ package com.github.ar1ls.weft.runtime.factory;
 import com.github.ar1ls.weft.api.annotations.Inject;
 import com.github.ar1ls.weft.api.exception.DefinitionException;
 import com.github.ar1ls.weft.definition.DependencyDescriptor;
+import com.github.ar1ls.weft.definition.Types;
 import com.github.ar1ls.weft.discovery.InjectionMetadataReader;
 import com.github.ar1ls.weft.spi.BeanFactory;
 import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.NonNull;
+import lombok.experimental.Accessors;
 import lombok.experimental.FieldDefaults;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Modifier;
+import java.lang.reflect.Type;
 import java.util.List;
 
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class ConstructorBeanFactory implements BeanFactory {
 
     Constructor<?> constructor;
+
+    @Getter(onMethod_ = @Override)
+    @Accessors(fluent = true)
     List<DependencyDescriptor> dependencies;
 
     public ConstructorBeanFactory(@NonNull Class<?> type) {
-        this.constructor = this.selectConstructor(type);
-        this.dependencies = InjectionMetadataReader.readParameters(this.constructor);
+        this((Type) type);
     }
 
-    @Override
-    public List<DependencyDescriptor> dependencies() {
-        return this.dependencies;
+    public ConstructorBeanFactory(@NonNull Type type) {
+        this.constructor = this.selectConstructor(Types.raw(type));
+        this.dependencies = InjectionMetadataReader.readParameters(this.constructor, type);
     }
 
     @Override

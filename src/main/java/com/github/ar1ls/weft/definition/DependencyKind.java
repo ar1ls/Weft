@@ -5,5 +5,7 @@ public enum DependencyKind {
     OPTIONAL,
     PROVIDER,
     LIST,
-    SET
+    SET,
+    VALUE,
+    LAZY
 }

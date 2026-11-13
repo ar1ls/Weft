@@ -5,6 +5,7 @@ import com.github.ar1ls.weft.api.exception.BeanCreationException;
 import com.github.ar1ls.weft.api.exception.DefinitionException;
 import com.github.ar1ls.weft.definition.BeanDefinition;
 import com.github.ar1ls.weft.definition.DependencyDescriptor;
+import com.github.ar1ls.weft.definition.Types;
 import com.github.ar1ls.weft.runtime.factory.ConstructorBeanFactory;
 import lombok.NonNull;
 
@@ -21,9 +22,12 @@ public class BeanCreator {
     }
 
     public Object create(@NonNull BeanDefinition definition, @NonNull Object[] arguments) {
-        if (!(definition.type().type() instanceof Class<?> type)) {
-            throw new BeanCreationException("Only class types are supported: " + definition.key());
+        try {
+            Types.validate(definition.type().type());
+        } catch (DefinitionException e) {
+            throw new BeanCreationException("Invalid bean type: " + definition.key(), e);
         }
+        var type = Types.raw(definition.type().type());
         var dependencies = definition.factory().dependencies();
         if (arguments.length != dependencies.size()) {
             throw new BeanCreationException("Expected " + dependencies.size() + " factory arguments: " + definition.key());
@@ -52,13 +56,13 @@ public class BeanCreator {
     }
 
     private boolean isValidArgument(DependencyDescriptor dependency, Object argument) {
-        if (!(dependency.type().type() instanceof Class<?> type)) {
-            return false;
-        }
+        var type = Types.raw(dependency.type().type());
         return switch (dependency.kind()) {
-            case DIRECT -> type.isInstance(argument);
+            case DIRECT, LAZY -> type.isInstance(argument);
+            case VALUE -> argument == null ? !type.isPrimitive() : type.isPrimitive() || type.isInstance(argument);
             case PROVIDER -> argument instanceof Provider<?>;
-            case OPTIONAL -> argument instanceof Optional<?> optional && (optional.isEmpty() || type.isInstance(optional.get()));
+            case OPTIONAL ->
+                    argument instanceof Optional<?> optional && (optional.isEmpty() || type.isInstance(optional.get()));
             case LIST -> argument instanceof List<?> list && this.containsOnly(type, list);
             case SET -> argument instanceof Set<?> set && this.containsOnly(type, set);
         };

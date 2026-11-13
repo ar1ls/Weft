@@ -3,15 +3,20 @@ package com.github.ar1ls.weft.plan;
 import com.github.ar1ls.weft.api.exception.AmbiguousBeanException;
 import com.github.ar1ls.weft.api.exception.DefinitionException;
 import com.github.ar1ls.weft.api.exception.MissingBeanException;
+import com.github.ar1ls.weft.api.exception.PropertyBindingException;
 import com.github.ar1ls.weft.definition.BeanDefinition;
 import com.github.ar1ls.weft.definition.BeanKey;
 import com.github.ar1ls.weft.definition.DependencyKind;
+import com.github.ar1ls.weft.definition.Types;
+import com.github.ar1ls.weft.discovery.FieldInjection;
 import com.github.ar1ls.weft.discovery.InjectionMetadataReader;
 import com.github.ar1ls.weft.discovery.LifecycleMetadataReader;
+import com.github.ar1ls.weft.properties.BindingPlan;
 import com.github.ar1ls.weft.properties.PropertiesBinder;
 import com.github.ar1ls.weft.properties.PropertyResolver;
 import com.github.ar1ls.weft.spi.PropertySource;
 
+import java.lang.reflect.Method;
 import java.util.*;
 
 public class PlanBuilder {
@@ -28,6 +33,12 @@ public class PlanBuilder {
             this.visit(definition, resolver, properties, plans, visiting, path);
         }
         return new InitializationPlan(plans, new ArrayList<>(plans.keySet()));
+    }
+
+    public CreationPlan transientPlan(BeanDefinition definition, DependencyResolver resolver, PropertySource properties, InitializationPlan existing) {
+        var plans = new LinkedHashMap<>(existing.beans());
+        this.visit(definition, resolver, properties, plans, new LinkedHashSet<>(), new ArrayList<>());
+        return plans.get(definition.key());
     }
 
     private void visit(
@@ -48,11 +59,13 @@ public class PlanBuilder {
 
         path.add(definition.key());
         try {
-            var type = (Class<?>) definition.type().type();
-            var bindings = PropertiesBinder.plan(type, properties);
-            var fields = InjectionMetadataReader.readFields(type);
-            var postConstruct = LifecycleMetadataReader.readPostConstruct(type);
-            var preDestroy = LifecycleMetadataReader.readPreDestroy(type);
+            var type = Types.raw(definition.type().type());
+            var bindings = definition.factory().initialize() ? PropertiesBinder.plan(definition.type().type(), properties)
+                    : new BindingPlan(List.of());
+            var fields = definition.factory().initialize() ? InjectionMetadataReader.readFields(definition.type().type())
+                    : List.<FieldInjection>of();
+            var postConstruct = definition.factory().initialize() ? LifecycleMetadataReader.readPostConstruct(type) : List.<Method>of();
+            var preDestroy = definition.factory().owned() ? LifecycleMetadataReader.readPreDestroy(type) : List.<Method>of();
             var dependencies = new ArrayList<>(definition.factory().dependencies());
             var argumentCount = dependencies.size();
             for (var field : fields) {
@@ -60,6 +73,15 @@ public class PlanBuilder {
             }
             var resolved = new ArrayList<ResolvedDependency>();
             for (var dependency : dependencies) {
+                if (dependency.kind() == DependencyKind.VALUE) {
+                    try {
+                        resolved.add(new ResolvedDependency(dependency, List.of(), dependency.property().resolve(properties)));
+                    } catch (PropertyBindingException e) {
+                        throw new PropertyBindingException(e.getMessage() + " at " + dependency.injectionPoint().description()
+                                + " for bean: " + definition.key());
+                    }
+                    continue;
+                }
                 List<BeanDefinition> targets;
                 try {
                     targets = resolver.resolve(dependency);
@@ -73,7 +95,7 @@ public class PlanBuilder {
                 var keys = new ArrayList<BeanKey>();
                 for (var target : targets) {
                     keys.add(target.key());
-                    if (dependency.kind() != DependencyKind.PROVIDER) {
+                    if (dependency.kind() != DependencyKind.PROVIDER && dependency.kind() != DependencyKind.LAZY) {
                         this.visit(target, resolver, properties, plans, visiting, path);
                     }
                 }

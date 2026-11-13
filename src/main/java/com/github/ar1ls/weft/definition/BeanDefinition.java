@@ -15,11 +15,18 @@ public record BeanDefinition(
         boolean primary,
         BeanSource source,
         BeanFactory factory,
-        List<Class<?>> missingTypes
+        List<Class<?>> missingTypes,
+        BeanKey conditionOwner
 ) {
+
     public BeanDefinition(BeanKey key, TypeRef<?> type, String name, BeanScope scope, boolean lazy, boolean primary,
-            BeanSource source, BeanFactory factory) {
-        this(key, type, name, scope, lazy, primary, source, factory, List.of());
+                          BeanSource source, BeanFactory factory, List<Class<?>> missingTypes) {
+        this(key, type, name, scope, lazy, primary, source, factory, missingTypes, null);
+    }
+
+    public BeanDefinition(BeanKey key, TypeRef<?> type, String name, BeanScope scope, boolean lazy, boolean primary,
+                          BeanSource source, BeanFactory factory) {
+        this(key, type, name, scope, lazy, primary, source, factory, List.of(), null);
     }
 
     public BeanDefinition {
@@ -34,4 +41,5 @@ public record BeanDefinition(
             throw new IllegalArgumentException("Bean key source must match definition source");
         }
     }
+
 }

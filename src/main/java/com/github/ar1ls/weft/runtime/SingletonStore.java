@@ -5,53 +5,84 @@ import com.github.ar1ls.weft.definition.BeanKey;
 import lombok.AccessLevel;
 import lombok.experimental.FieldDefaults;
 
-import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.Map;
-import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.function.Supplier;
 
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class SingletonStore {
 
-    Map<BeanKey, Object> instances = new LinkedHashMap<>();
-    Map<BeanKey, Throwable> failures = new LinkedHashMap<>();
-    Set<BeanKey> creating = new HashSet<>();
+    Map<BeanKey, CompletableFuture<Object>> instances = new LinkedHashMap<>();
+    Map<BeanKey, Thread> owners = new LinkedHashMap<>();
+    Map<Thread, BeanKey> waiting = new LinkedHashMap<>();
 
-    void clear() {
+    synchronized void clear() {
         this.instances.clear();
-        this.failures.clear();
-        this.creating.clear();
+        this.owners.clear();
+        this.waiting.clear();
     }
 
     Object getOrCreate(BeanKey key, Supplier<?> factory) {
-        var existing = this.instances.get(key);
-        if (existing != null) {
-            return existing;
-        }
-        var failure = this.failures.get(key);
-        if (failure instanceof RuntimeException exception) {
-            throw exception;
-        }
-        if (failure instanceof Error error) {
-            throw error;
-        }
-        if (!this.creating.add(key)) {
-            throw new BeanCreationException("Circular singleton creation: " + key);
-        }
-
-        try {
-            var instance = factory.get();
-            if (instance == null) {
-                throw new BeanCreationException("Null singleton result: " + key);
+        CompletableFuture<Object> result;
+        boolean create;
+        var thread = Thread.currentThread();
+        synchronized (this) {
+            result = this.instances.get(key);
+            create = result == null;
+            if (create) {
+                result = new CompletableFuture<>();
+                this.instances.put(key, result);
+                this.owners.put(key, thread);
+            } else if (!result.isDone()) {
+                var owner = this.owners.get(key);
+                var path = new ArrayList<BeanKey>();
+                path.add(key);
+                while (owner != null) {
+                    if (owner == thread) {
+                        throw new BeanCreationException("Circular singleton creation: " + path);
+                    }
+                    var target = this.waiting.get(owner);
+                    if (target == null) {
+                        break;
+                    }
+                    path.add(target);
+                    owner = this.owners.get(target);
+                }
+                this.waiting.put(thread, key);
             }
-            this.instances.put(key, instance);
-            return instance;
-        } catch (RuntimeException | Error e) {
-            this.failures.put(key, e);
-            throw e;
+        }
+        if (create) {
+            try {
+                var instance = factory.get();
+                if (instance == null) {
+                    throw new BeanCreationException("Null singleton result: " + key);
+                }
+                result.complete(instance);
+            } catch (Throwable failure) {
+                result.completeExceptionally(failure);
+            } finally {
+                synchronized (this) {
+                    this.owners.remove(key);
+                }
+            }
+        }
+        try {
+            return result.join();
+        } catch (CompletionException failure) {
+            if (failure.getCause() instanceof RuntimeException cause) {
+                throw cause;
+            }
+            if (failure.getCause() instanceof Error cause) {
+                throw cause;
+            }
+            throw new BeanCreationException("Cannot create singleton: " + key, failure.getCause());
         } finally {
-            this.creating.remove(key);
+            synchronized (this) {
+                this.waiting.remove(thread);
+            }
         }
     }
 

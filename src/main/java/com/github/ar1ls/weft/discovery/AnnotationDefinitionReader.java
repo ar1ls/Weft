@@ -8,6 +8,7 @@ import com.github.ar1ls.weft.definition.BeanDefinition;
 import com.github.ar1ls.weft.definition.BeanKey;
 import com.github.ar1ls.weft.definition.BeanSource;
 import com.github.ar1ls.weft.definition.TypeRef;
+import com.github.ar1ls.weft.definition.Types;
 import com.github.ar1ls.weft.properties.PropertyResolver;
 import com.github.ar1ls.weft.runtime.factory.ConstructorBeanFactory;
 import com.github.ar1ls.weft.runtime.factory.MethodBeanFactory;
@@ -15,6 +16,7 @@ import com.github.ar1ls.weft.spi.BeanFactory;
 import com.github.ar1ls.weft.spi.PropertySource;
 import lombok.AccessLevel;
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 
 import java.lang.reflect.AnnotatedElement;
@@ -23,16 +25,14 @@ import java.lang.reflect.Modifier;
 import java.util.*;
 
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
+@RequiredArgsConstructor
 public class AnnotationDefinitionReader {
 
+    @NonNull
     PropertySource properties;
 
     public AnnotationDefinitionReader() {
         this(new PropertyResolver(Map.of()));
-    }
-
-    public AnnotationDefinitionReader(@NonNull PropertySource properties) {
-        this.properties = properties;
     }
 
     public List<BeanDefinition> read(@NonNull Class<?> type, @NonNull BeanSource source) {
@@ -44,13 +44,13 @@ public class AnnotationDefinitionReader {
         if (!ConditionEvaluator.matches(type, this.properties)) {
             return List.of();
         }
-        if (configuration && type.isAnnotationPresent(ConditionalOnMissingBean.class)) {
-            throw new DefinitionException("@ConditionalOnMissingBean on @Configuration is not supported; use @Bean methods: " + type.getName());
-        }
 
         var definitions = new ArrayList<BeanDefinition>();
         var key = new BeanKey(source.id(), type.getName());
-        definitions.add(this.definition(key, TypeRef.of(type), type, source, new ConstructorBeanFactory(type)));
+        var owner = this.definition(key, TypeRef.of(type), type, source, new ConstructorBeanFactory(type));
+        var conditionalConfiguration = configuration && !owner.missingTypes().isEmpty();
+        definitions.add(new BeanDefinition(owner.key(), owner.type(), owner.name(), owner.scope(), owner.lazy(),
+                owner.primary(), owner.source(), owner.factory(), owner.missingTypes(), conditionalConfiguration ? key : null));
 
         this.validateMethods(type, configuration);
         if (configuration) {
@@ -65,7 +65,10 @@ public class AnnotationDefinitionReader {
                 }
                 var methodKey = new BeanKey(source.id(), type.getName() + "#" + method.toGenericString());
                 var factory = new MethodBeanFactory(method, type);
-                definitions.add(this.definition(methodKey, TypeRef.of(method.getGenericReturnType()), method, source, factory));
+                var product = this.definition(methodKey, TypeRef.of(Types.member(type, method.getDeclaringClass(), method.getGenericReturnType())), method, source, factory);
+                definitions.add(new BeanDefinition(product.key(), product.type(), product.name(), product.scope(), product.lazy(),
+                        product.primary(), product.source(), product.factory(), product.missingTypes(),
+                        conditionalConfiguration ? key : null));
             }
         }
         return List.copyOf(definitions);
@@ -100,12 +103,14 @@ public class AnnotationDefinitionReader {
         var missing = element.getAnnotation(ConditionalOnMissingBean.class);
         List<Class<?>> missingTypes = List.of();
         if (missing != null) {
-            if (!(type.type() instanceof Class<?> declaredType) || declaredType.isPrimitive()) {
-                throw new DefinitionException("Fallback requires a reference Class type: " + key);
+            var declaredType = Types.raw(type.type());
+            var configuration = element.isAnnotationPresent(Configuration.class);
+            if (configuration && missing.value().length == 0) {
+                throw new DefinitionException("@ConditionalOnMissingBean on @Configuration requires explicit contracts; use @Bean methods for inferred types: " + key);
             }
             missingTypes = missing.value().length == 0 ? List.of(declaredType) : List.of(missing.value());
             for (var contract : missingTypes) {
-                if (!contract.isAssignableFrom(declaredType)) {
+                if (contract.isPrimitive() || (!configuration && !contract.isAssignableFrom(declaredType))) {
                     throw new DefinitionException("Fallback type must implement " + contract.getName() + ": " + key);
                 }
             }

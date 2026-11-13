@@ -10,4 +10,12 @@ public interface BeanFactory {
 
     Object create(Object[] arguments) throws Exception;
 
+    default boolean initialize() {
+        return true;
+    }
+
+    default boolean owned() {
+        return true;
+    }
+
 }

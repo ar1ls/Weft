@@ -2,6 +2,7 @@ package com.github.ar1ls.weft.runtime;
 
 import com.github.ar1ls.weft.api.exception.ShutdownException;
 import com.github.ar1ls.weft.definition.BeanKey;
+import com.github.ar1ls.weft.definition.Types;
 import lombok.AccessLevel;
 import lombok.experimental.FieldDefaults;
 
@@ -17,7 +18,7 @@ public class ShutdownCoordinator {
     Map<BeanKey, Set<BeanKey>> dependencies = new LinkedHashMap<>();
     Set<Object> destroyed = Collections.newSetFromMap(new IdentityHashMap<>());
 
-    public void track(ManagedBean bean) {
+    public synchronized void track(ManagedBean bean) {
         for (var managed : this.beans.values()) {
             if (managed.original() == bean.original()) {
                 var existing = managed.plan().definition().key();
@@ -29,7 +30,7 @@ public class ShutdownCoordinator {
         this.beans.put(bean.plan().definition().key(), bean);
     }
 
-    public void recordDependency(BeanKey consumer, BeanKey dependency) {
+    public synchronized void recordDependency(BeanKey consumer, BeanKey dependency) {
         if (!consumer.equals(dependency)) {
             this.dependencies.computeIfAbsent(consumer, key -> new LinkedHashSet<>()).add(dependency);
         }
@@ -66,7 +67,7 @@ public class ShutdownCoordinator {
     }
 
     public ShutdownException destroyFailed(ManagedBean bean) {
-        for (var managed : this.beans.values()) {
+        for (var managed : this.snapshot()) {
             if (managed.original() == bean.original()) {
                 return null;
             }
@@ -74,17 +75,21 @@ public class ShutdownCoordinator {
         try {
             return this.destroy(bean);
         } finally {
-            this.destroyed.remove(bean.original());
+            synchronized (this) {
+                this.destroyed.remove(bean.original());
+            }
         }
     }
 
     private ShutdownException destroy(ManagedBean bean) {
-        if (!this.destroyed.add(bean.original())) {
-            return null;
+        synchronized (this) {
+            if (!this.destroyed.add(bean.original())) {
+                return null;
+            }
         }
-        for (var managed : this.beans.values()) {
-            var type = (Class<?>) bean.plan().definition().type().type();
-            var candidate = (Class<?>) managed.plan().definition().type().type();
+        for (var managed : this.snapshot()) {
+            var type = Types.raw(bean.plan().definition().type().type());
+            var candidate = Types.raw(managed.plan().definition().type().type());
             if (managed.original() == bean.original() && type.isAssignableFrom(candidate)) {
                 bean = managed;
             }
@@ -117,6 +122,10 @@ public class ShutdownCoordinator {
                 this.collectDependencies(target, targets);
             }
         }
+    }
+
+    private synchronized List<ManagedBean> snapshot() {
+        return new ArrayList<>(this.beans.values());
     }
 
     private List<BeanKey> nextGroup(List<BeanKey> remaining, Map<BeanKey, Set<BeanKey>> reachable) {

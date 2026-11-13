@@ -1,5 +1,17 @@
 plugins {
     id("java")
+    id("maven-publish")
+}
+
+java {
+    toolchain.languageVersion.set(JavaLanguageVersion.of(21))
+    withSourcesJar()
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("mavenJava") { from(components["java"]) }
+    }
 }
 
 group = "com.github.arl1s.weft"

@@ -2,39 +2,45 @@ package com.github.ar1ls.weft.runtime;
 
 import com.github.ar1ls.weft.api.BeanScope;
 import com.github.ar1ls.weft.api.Provider;
+import com.github.ar1ls.weft.api.Subscription;
 import com.github.ar1ls.weft.api.exception.BeanCreationException;
-import com.github.ar1ls.weft.definition.BeanDefinition;
-import com.github.ar1ls.weft.definition.BeanKey;
-import com.github.ar1ls.weft.definition.DependencyKind;
-import com.github.ar1ls.weft.plan.CreationPlan;
-import com.github.ar1ls.weft.plan.DependencyResolver;
-import com.github.ar1ls.weft.plan.InitializationPlan;
-import com.github.ar1ls.weft.plan.PlanBuilder;
-import com.github.ar1ls.weft.plan.ResolvedDependency;
+import com.github.ar1ls.weft.api.lifecycle.BeanReadyEvent;
+import com.github.ar1ls.weft.api.lifecycle.StartupHook;
+import com.github.ar1ls.weft.definition.*;
+import com.github.ar1ls.weft.discovery.InjectionMetadataReader;
+import com.github.ar1ls.weft.plan.*;
+import com.github.ar1ls.weft.properties.PreparedProperty;
 import com.github.ar1ls.weft.properties.PropertiesBinder;
 import com.github.ar1ls.weft.properties.PropertyResolver;
+import com.github.ar1ls.weft.runtime.factory.ConstructorBeanFactory;
 import com.github.ar1ls.weft.spi.BeanProcessor;
 import lombok.AccessLevel;
 import lombok.NonNull;
 import lombok.experimental.FieldDefaults;
 
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
-@FieldDefaults(level = AccessLevel.PRIVATE)
+@FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class WeftRuntime implements AutoCloseable {
 
-    final DependencyResolver resolver;
-    final InitializationPlan plan;
-    final List<BeanProcessor> processors;
-    final BeanCreator creator = new BeanCreator();
-    final SingletonStore singletons = new SingletonStore();
-    final ShutdownCoordinator shutdown = new ShutdownCoordinator();
-    final Set<BeanKey> creatingPrototypes = new HashSet<>();
-    final List<BeanKey> creatingBeans = new ArrayList<>();
-    final Thread ownerThread = Thread.currentThread();
-
-    RuntimeState state = RuntimeState.NEW;
+    DependencyResolver resolver;
+    InitializationPlan plan;
+    List<BeanProcessor> processors;
+    BeanCreator creator = new BeanCreator();
+    SingletonStore singletons = new SingletonStore();
+    ShutdownCoordinator shutdown = new ShutdownCoordinator();
+    ThreadLocal<Set<BeanKey>> creatingPrototypes = ThreadLocal.withInitial(HashSet::new);
+    ThreadLocal<List<BeanKey>> creatingBeans = ThreadLocal.withInitial(ArrayList::new);
+    ThreadLocal<Boolean> cleaning = ThreadLocal.withInitial(() -> false);
+    RuntimeGate gate = new RuntimeGate();
+    PropertyResolver properties;
+    String transientSourceId;
+    LifecycleSubscriptions subscriptions = new LifecycleSubscriptions();
+    Set<BeanKey> published = ConcurrentHashMap.newKeySet();
 
     public WeftRuntime(@NonNull BeanRegistry registry) {
         this(registry, Map.of());
@@ -54,17 +60,23 @@ public class WeftRuntime implements AutoCloseable {
 
     public WeftRuntime(@NonNull BeanRegistry registry, @NonNull PropertyResolver properties, List<? extends BeanProcessor> processors) {
         this.processors = List.copyOf(processors);
+        this.properties = properties;
         this.resolver = new DependencyResolver(registry.freeze().values());
         this.plan = new PlanBuilder().build(this.resolver, properties);
+        var sources = new HashSet<String>();
+        for (var definition : this.resolver.definitions()) {
+            sources.add(definition.source().id());
+        }
+        var sourceId = "weft-transient";
+        while (sources.contains(sourceId)) {
+            sourceId += "_";
+        }
+        this.transientSourceId = sourceId;
     }
 
     public void start() {
-        this.requireOwnerThread();
-        if (this.state != RuntimeState.NEW) {
-            throw new IllegalStateException("Cannot start runtime in state: " + this.state);
-        }
-
-        this.state = RuntimeState.STARTING;
+        this.gate.start();
+        var success = false;
         try {
             for (var key : this.plan.creationOrder()) {
                 var definition = this.plan.beans().get(key).definition();
@@ -72,36 +84,57 @@ public class WeftRuntime implements AutoCloseable {
                     this.resolve(definition);
                 }
             }
-            this.state = RuntimeState.RUNNING;
+            this.runStartupHooks();
+            success = true;
         } catch (RuntimeException | Error e) {
-            this.state = RuntimeState.CLOSING;
+            this.cleaning.set(true);
             try {
                 this.shutdown.close();
             } catch (RuntimeException | Error cleanup) {
                 e.addSuppressed(cleanup);
             } finally {
                 this.singletons.clear();
-                this.state = RuntimeState.FAILED;
+                this.subscriptions.clear();
+                this.published.clear();
+                this.cleaning.remove();
             }
             throw e;
+        } finally {
+            this.gate.started(success);
         }
     }
 
     @Override
     public void close() {
-        this.requireOwnerThread();
-        if (this.state == RuntimeState.CLOSED || this.state == RuntimeState.CLOSING) {
+        if (!this.gate.beginClose()) {
             return;
         }
-        if (this.state == RuntimeState.STARTING || !this.creatingBeans.isEmpty()) {
-            throw new IllegalStateException("Cannot close runtime during bean creation");
-        }
-        this.state = RuntimeState.CLOSING;
         try {
             this.shutdown.close();
         } finally {
             this.singletons.clear();
-            this.state = RuntimeState.CLOSED;
+            this.subscriptions.clear();
+            this.published.clear();
+            this.gate.closed();
+        }
+    }
+
+    private void runStartupHooks() {
+        var invoked = Collections.newSetFromMap(new IdentityHashMap<StartupHook, Boolean>());
+        for (var definition : this.resolver.definitions()) {
+            if (definition.scope() != BeanScope.SINGLETON
+                    || !StartupHook.class.isAssignableFrom(Types.raw(definition.type().type()))) {
+                continue;
+            }
+            var hook = (StartupHook) this.resolve(definition);
+            if (!invoked.add(hook)) {
+                continue;
+            }
+            try {
+                hook.onStartup();
+            } catch (Exception e) {
+                throw new BeanCreationException("StartupHook failed for bean: " + definition.key(), e);
+            }
         }
     }
 
@@ -110,38 +143,119 @@ public class WeftRuntime implements AutoCloseable {
     }
 
     public <T> T get(@NonNull Class<T> type, @NonNull String name) {
-        this.requireOwnerThread();
-        if (this.state != RuntimeState.RUNNING) {
-            throw new IllegalStateException("Cannot get bean in runtime state: " + this.state);
-        }
+        return type.cast(this.get(TypeRef.of(type), name));
+    }
 
-        var definition = this.resolver.resolve(type, name);
-        return type.cast(this.resolve(definition));
+    public <T> T get(TypeRef<T> type) {
+        return this.get(type, "");
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> T get(TypeRef<T> type, String name) {
+        this.enter();
+        try {
+            var descriptor = new DependencyDescriptor(type, name, DependencyKind.DIRECT, new InjectionPoint("get(" + type + ")"));
+            return (T) this.resolve(this.resolver.resolve(descriptor).getFirst());
+        } finally {
+            this.gate.exit();
+        }
     }
 
     private Object resolve(BeanDefinition definition) {
-        if (!this.creatingBeans.isEmpty()) {
-            this.shutdown.recordDependency(this.creatingBeans.getLast(), definition.key());
+        if (!this.creatingBeans.get().isEmpty()) {
+            this.shutdown.recordDependency(this.creatingBeans.get().getLast(), definition.key());
         }
         if (definition.scope() == BeanScope.PROTOTYPE) {
-            if (!this.creatingPrototypes.add(definition.key())) {
+            if (!this.creatingPrototypes.get().add(definition.key())) {
                 throw new BeanCreationException("Circular prototype creation: " + definition.key());
             }
             try {
                 return this.create(this.plan.beans().get(definition.key()));
             } finally {
-                this.creatingPrototypes.remove(definition.key());
+                this.creatingPrototypes.get().remove(definition.key());
+                if (this.creatingPrototypes.get().isEmpty()) {
+                    this.creatingPrototypes.remove();
+                }
             }
         }
-        return this.singletons.getOrCreate(definition.key(), () -> this.create(this.plan.beans().get(definition.key())));
+        var instance = this.singletons.getOrCreate(definition.key(), () -> this.create(this.plan.beans().get(definition.key())));
+        if (this.published.add(definition.key())) {
+            this.subscriptions.publish(new BeanReadyEvent(definition, instance));
+        }
+        return instance;
+    }
+
+    public Subscription subscribe(Consumer<BeanReadyEvent> listener) {
+        this.enter();
+        try {
+            return this.subscriptions.subscribe(listener);
+        } finally {
+            this.gate.exit();
+        }
+    }
+
+    public InitializationPlan report() {
+        return this.plan;
+    }
+
+    public boolean isClosed() {
+        return this.gate.isClosed();
+    }
+
+    public <T> T create(Class<T> type) {
+        return type.cast(this.create(TypeRef.of(type)));
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> T create(TypeRef<T> type) {
+        this.enter();
+        try {
+            var loader = Types.raw(type.type()).getClassLoader();
+            var source = new BeanSource(this.transientSourceId, loader == null ? WeftRuntime.class.getClassLoader() : loader);
+            var definition = new BeanDefinition(new BeanKey(source.id(), type.toString()), type, "",
+                    BeanScope.PROTOTYPE, false, false, source, new ConstructorBeanFactory(type.type()));
+            var transientPlan = new PlanBuilder().transientPlan(definition, this.resolver, this.properties, this.plan);
+            return (T) this.create(transientPlan);
+        } finally {
+            this.gate.exit();
+        }
+    }
+
+    public void inject(Object instance) {
+        Objects.requireNonNull(instance, "instance");
+        this.enter();
+        try {
+            var injections = InjectionMetadataReader.readFields(instance.getClass());
+            var values = new ArrayList<>();
+            for (var field : injections) {
+                var keys = new ArrayList<BeanKey>();
+                for (var target : this.resolver.resolve(field.dependency())) {
+                    keys.add(target.key());
+                }
+                values.add(this.resolveDependency(new ResolvedDependency(field.dependency(), keys)));
+            }
+            for (var index = 0; index < injections.size(); index++) {
+                var field = injections.get(index).field();
+                try {
+                    field.set(instance, values.get(index));
+                } catch (IllegalAccessException e) {
+                    throw new BeanCreationException("Cannot inject " + field, e);
+                }
+            }
+        } finally {
+            this.gate.exit();
+        }
     }
 
     private Object create(CreationPlan plan) {
-        this.creatingBeans.add(plan.definition().key());
+        this.creatingBeans.get().add(plan.definition().key());
         try {
             return this.instantiate(plan);
         } finally {
-            this.creatingBeans.removeLast();
+            this.creatingBeans.get().removeLast();
+            if (this.creatingBeans.get().isEmpty()) {
+                this.creatingBeans.remove();
+            }
         }
     }
 
@@ -153,24 +267,25 @@ public class WeftRuntime implements AutoCloseable {
         var bean = this.creator.create(plan.definition(), arguments);
         Object exposed;
         try {
-            this.initialize(plan, bean);
+            if (plan.definition().factory().initialize()) {
+                this.initialize(plan, bean);
+            }
             exposed = this.process(plan.definition(), bean);
         } catch (RuntimeException | Error e) {
-            var previousState = this.state;
-            this.state = RuntimeState.CLOSING;
+            this.cleaning.set(true);
             try {
-                var cleanup = this.shutdown.destroyFailed(new ManagedBean(plan, bean));
+                var cleanup = plan.definition().factory().owned() ? this.shutdown.destroyFailed(new ManagedBean(plan, bean)) : null;
                 if (cleanup != null) {
                     e.addSuppressed(cleanup);
                 }
             } catch (RuntimeException | Error cleanup) {
                 e.addSuppressed(cleanup);
             } finally {
-                this.state = previousState;
+                this.cleaning.remove();
             }
             throw e;
         }
-        if (plan.definition().scope() == BeanScope.SINGLETON) {
+        if (plan.definition().scope() == BeanScope.SINGLETON && plan.definition().factory().owned()) {
             this.shutdown.track(new ManagedBean(plan, bean, exposed));
         }
         return exposed;
@@ -178,7 +293,7 @@ public class WeftRuntime implements AutoCloseable {
 
     private Object process(BeanDefinition definition, Object original) {
         var exposed = original;
-        var type = (Class<?>) definition.type().type();
+        var type = Types.raw(definition.type().type());
         for (var index = 0; index < this.processors.size(); index++) {
             var processor = this.processors.get(index);
             try {
@@ -219,6 +334,15 @@ public class WeftRuntime implements AutoCloseable {
     }
 
     private Object resolveDependency(ResolvedDependency dependency) {
+        if (dependency.descriptor().kind() == DependencyKind.VALUE) {
+            return PreparedProperty.materialize(dependency.propertyValue());
+        }
+        if (dependency.descriptor().kind() == DependencyKind.LAZY) {
+            var target = this.plan.beans().get(dependency.targets().getFirst()).definition();
+            var contract = Types.raw(dependency.descriptor().type().type());
+            return Proxy.newProxyInstance(contract.getClassLoader(), new Class<?>[]{contract},
+                    new LazyInvocationHandler(contract, this.providerFor(target)));
+        }
         if (dependency.descriptor().kind() == DependencyKind.PROVIDER) {
             var target = this.plan.beans().get(dependency.targets().getFirst()).definition();
             return this.providerFor(target);
@@ -232,27 +356,31 @@ public class WeftRuntime implements AutoCloseable {
             case OPTIONAL -> values.isEmpty() ? Optional.empty() : Optional.of(values.getFirst());
             case LIST -> List.copyOf(values);
             case SET -> Collections.unmodifiableSet(new LinkedHashSet<>(values));
-            case PROVIDER -> throw new IllegalStateException("Provider must be resolved lazily");
+            case PROVIDER, LAZY, VALUE ->
+                    throw new IllegalStateException("Deferred/value dependency must be resolved separately");
         };
     }
 
     private Provider<?> providerFor(BeanDefinition definition) {
-        var consumer = this.creatingBeans.getLast();
+        var consumer = this.creatingBeans.get().isEmpty() ? null : this.creatingBeans.get().getLast();
         return () -> {
-            this.requireOwnerThread();
-            if (this.state != RuntimeState.STARTING && this.state != RuntimeState.RUNNING) {
-                throw new IllegalStateException("Cannot use provider in runtime state: " + this.state);
+            this.enter();
+            try {
+                if (consumer != null) {
+                    this.shutdown.recordDependency(consumer, definition.key());
+                }
+                return this.resolve(definition);
+            } finally {
+                this.gate.exit();
             }
-            this.shutdown.recordDependency(consumer, definition.key());
-            return this.resolve(definition);
         };
     }
 
-    private void requireOwnerThread() {
-        if (Thread.currentThread() != this.ownerThread) {
-            throw new IllegalStateException("Runtime currently supports only its owner thread: "
-                    + this.ownerThread.getName());
+    private void enter() {
+        if (this.cleaning.get()) {
+            throw new IllegalStateException("Cannot access runtime during cleanup");
         }
+        this.gate.enter();
     }
 
 }

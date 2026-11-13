@@ -191,11 +191,11 @@ class PropertiesRuntimeTest {
     }
 
     @Test
-    void parameterAnnotationsFailExplicitlyInsteadOfBecomingDiDependencies() {
+    void parameterAnnotationsBecomePreparedPropertyDependencies() {
         for (var method : PropertyParameterFixtures.class.getDeclaredMethods()) {
-            var exception = assertThrows(DefinitionException.class, () -> InjectionMetadataReader.readParameters(method));
-
-            assertTrue(exception.getMessage().contains("parameters are not supported"));
+            var dependency = InjectionMetadataReader.readParameters(method).getFirst();
+            assertEquals(com.github.ar1ls.weft.definition.DependencyKind.VALUE, dependency.kind());
+            assertNotNull(dependency.property());
         }
     }
 

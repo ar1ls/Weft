@@ -8,7 +8,9 @@ import com.github.ar1ls.weft.definition.TypeRef;
 import com.github.ar1ls.weft.discovery.InjectionMetadataReader;
 import com.github.ar1ls.weft.spi.BeanFactory;
 import lombok.AccessLevel;
+import lombok.Getter;
 import lombok.NonNull;
+import lombok.experimental.Accessors;
 import lombok.experimental.FieldDefaults;
 
 import java.lang.reflect.Method;
@@ -23,6 +25,9 @@ public class MethodBeanFactory implements BeanFactory {
     Method method;
     Class<?> ownerType;
     boolean staticMethod;
+
+    @Getter(onMethod_ = @Override)
+    @Accessors(fluent = true)
     List<DependencyDescriptor> dependencies;
 
     public MethodBeanFactory(@NonNull Method method, @NonNull Class<?> ownerType) {
@@ -50,13 +55,8 @@ public class MethodBeanFactory implements BeanFactory {
             dependencies.add(new DependencyDescriptor(TypeRef.of(ownerType), "", DependencyKind.DIRECT,
                     new InjectionPoint(method.toGenericString() + " configuration owner")));
         }
-        dependencies.addAll(InjectionMetadataReader.readParameters(method));
+        dependencies.addAll(InjectionMetadataReader.readParameters(method, ownerType));
         return dependencies;
-    }
-
-    @Override
-    public List<DependencyDescriptor> dependencies() {
-        return this.dependencies;
     }
 
     @Override
