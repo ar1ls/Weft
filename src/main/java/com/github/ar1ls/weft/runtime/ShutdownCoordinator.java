@@ -19,7 +19,7 @@ public class ShutdownCoordinator {
 
     public void track(ManagedBean bean) {
         for (var managed : this.beans.values()) {
-            if (managed.instance() == bean.instance()) {
+            if (managed.original() == bean.original()) {
                 var existing = managed.plan().definition().key();
                 var alias = bean.plan().definition().key();
                 this.recordDependency(existing, alias);
@@ -67,41 +67,41 @@ public class ShutdownCoordinator {
 
     public ShutdownException destroyFailed(ManagedBean bean) {
         for (var managed : this.beans.values()) {
-            if (managed.instance() == bean.instance()) {
+            if (managed.original() == bean.original()) {
                 return null;
             }
         }
         try {
             return this.destroy(bean);
         } finally {
-            this.destroyed.remove(bean.instance());
+            this.destroyed.remove(bean.original());
         }
     }
 
     private ShutdownException destroy(ManagedBean bean) {
-        if (!this.destroyed.add(bean.instance())) {
+        if (!this.destroyed.add(bean.original())) {
             return null;
         }
         for (var managed : this.beans.values()) {
             var type = (Class<?>) bean.plan().definition().type().type();
             var candidate = (Class<?>) managed.plan().definition().type().type();
-            if (managed.instance() == bean.instance() && type.isAssignableFrom(candidate)) {
+            if (managed.original() == bean.original() && type.isAssignableFrom(candidate)) {
                 bean = managed;
             }
         }
         var failure = new ShutdownException("Cannot destroy bean: " + bean.plan().definition().key());
         var closeInvoked = false;
         for (var hook : bean.plan().preDestroy()) {
-            closeInvoked |= this.isCloseMethod(bean.instance(), hook);
+            closeInvoked |= this.isCloseMethod(bean.original(), hook);
             try {
-                hook.invoke(bean.instance());
+                hook.invoke(bean.original());
             } catch (InvocationTargetException e) {
                 failure.addSuppressed(new ShutdownException("PreDestroy failed at " + hook.toGenericString(), e.getCause()));
             } catch (ReflectiveOperationException | RuntimeException e) {
                 failure.addSuppressed(new ShutdownException("Cannot invoke PreDestroy " + hook.toGenericString(), e));
             }
         }
-        if (!closeInvoked && bean.instance() instanceof AutoCloseable closeable) {
+        if (!closeInvoked && bean.original() instanceof AutoCloseable closeable) {
             try {
                 closeable.close();
             } catch (Exception | Error e) {

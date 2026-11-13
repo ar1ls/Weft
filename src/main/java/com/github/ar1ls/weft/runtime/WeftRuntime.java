@@ -13,6 +13,7 @@ import com.github.ar1ls.weft.plan.PlanBuilder;
 import com.github.ar1ls.weft.plan.ResolvedDependency;
 import com.github.ar1ls.weft.properties.PropertiesBinder;
 import com.github.ar1ls.weft.properties.PropertyResolver;
+import com.github.ar1ls.weft.spi.BeanProcessor;
 import lombok.AccessLevel;
 import lombok.NonNull;
 import lombok.experimental.FieldDefaults;
@@ -25,6 +26,7 @@ public class WeftRuntime implements AutoCloseable {
 
     final DependencyResolver resolver;
     final InitializationPlan plan;
+    final List<BeanProcessor> processors;
     final BeanCreator creator = new BeanCreator();
     final SingletonStore singletons = new SingletonStore();
     final ShutdownCoordinator shutdown = new ShutdownCoordinator();
@@ -43,6 +45,15 @@ public class WeftRuntime implements AutoCloseable {
     }
 
     public WeftRuntime(@NonNull BeanRegistry registry, @NonNull PropertyResolver properties) {
+        this(registry, properties, List.of());
+    }
+
+    public WeftRuntime(BeanRegistry registry, Map<String, String> properties, List<? extends BeanProcessor> processors) {
+        this(registry, new PropertyResolver(properties), processors);
+    }
+
+    public WeftRuntime(@NonNull BeanRegistry registry, @NonNull PropertyResolver properties, List<? extends BeanProcessor> processors) {
+        this.processors = List.copyOf(processors);
         this.resolver = new DependencyResolver(registry.freeze().values());
         this.plan = new PlanBuilder().build(this.resolver, properties);
     }
@@ -140,8 +151,10 @@ public class WeftRuntime implements AutoCloseable {
             arguments[index] = this.resolveDependency(plan.arguments().get(index));
         }
         var bean = this.creator.create(plan.definition(), arguments);
+        Object exposed;
         try {
             this.initialize(plan, bean);
+            exposed = this.process(plan.definition(), bean);
         } catch (RuntimeException | Error e) {
             var previousState = this.state;
             this.state = RuntimeState.CLOSING;
@@ -158,9 +171,27 @@ public class WeftRuntime implements AutoCloseable {
             throw e;
         }
         if (plan.definition().scope() == BeanScope.SINGLETON) {
-            this.shutdown.track(new ManagedBean(plan, bean));
+            this.shutdown.track(new ManagedBean(plan, bean, exposed));
         }
-        return bean;
+        return exposed;
+    }
+
+    private Object process(BeanDefinition definition, Object original) {
+        var exposed = original;
+        var type = (Class<?>) definition.type().type();
+        for (var index = 0; index < this.processors.size(); index++) {
+            var processor = this.processors.get(index);
+            try {
+                exposed = processor.process(definition, exposed);
+            } catch (Exception e) {
+                throw new BeanCreationException("BeanProcessor " + index + " failed for bean: " + definition.key(), e);
+            }
+            if (!type.isInstance(exposed)) {
+                throw new BeanCreationException("Invalid BeanProcessor " + index + " result; expected " + type.getName()
+                        + " for bean: " + definition.key());
+            }
+        }
+        return exposed;
     }
 
     private void initialize(CreationPlan plan, Object bean) {
