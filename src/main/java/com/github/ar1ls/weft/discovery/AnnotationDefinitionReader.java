@@ -7,10 +7,14 @@ import com.github.ar1ls.weft.definition.BeanDefinition;
 import com.github.ar1ls.weft.definition.BeanKey;
 import com.github.ar1ls.weft.definition.BeanSource;
 import com.github.ar1ls.weft.definition.TypeRef;
+import com.github.ar1ls.weft.properties.PropertyResolver;
 import com.github.ar1ls.weft.runtime.factory.ConstructorBeanFactory;
 import com.github.ar1ls.weft.runtime.factory.MethodBeanFactory;
 import com.github.ar1ls.weft.spi.BeanFactory;
+import com.github.ar1ls.weft.spi.PropertySource;
+import lombok.AccessLevel;
 import lombok.NonNull;
+import lombok.experimental.FieldDefaults;
 
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
@@ -19,12 +23,28 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
+@FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class AnnotationDefinitionReader {
+
+    PropertySource properties;
+
+    public AnnotationDefinitionReader() {
+        this(new PropertyResolver(Map.of()));
+    }
+
+    public AnnotationDefinitionReader(@NonNull PropertySource properties) {
+        this.properties = properties;
+    }
 
     public List<BeanDefinition> read(@NonNull Class<?> type, @NonNull BeanSource source) {
         var configuration = type.isAnnotationPresent(Configuration.class);
         if (!configuration && !type.isAnnotationPresent(Bean.class)) {
+            return List.of();
+        }
+
+        if (!ConditionEvaluator.matches(type, this.properties)) {
             return List.of();
         }
 
@@ -38,6 +58,9 @@ public class AnnotationDefinitionReader {
             Arrays.sort(methods, Comparator.comparing(Method::toGenericString));
             for (var method : methods) {
                 if (!method.isAnnotationPresent(Bean.class) || method.isBridge() || method.isSynthetic()) {
+                    continue;
+                }
+                if (!ConditionEvaluator.matches(method, this.properties)) {
                     continue;
                 }
                 var methodKey = new BeanKey(source.id(), type.getName() + "#" + method.toGenericString());
