@@ -57,7 +57,8 @@ public class WeftBootstrap {
                 }
             }
         }
-        var runtime = new WeftRuntime(registry, properties, options.processors());
+        var defaults = SourceDefaults.expand(registry, sources.values(), options.sourceDefaults(), options.sourceDefaultFactories());
+        var runtime = new WeftRuntime(registry, properties, options.processors(), defaults);
         runtime.start();
         return runtime;
     }

@@ -66,8 +66,20 @@ public class Weft {
         return current().create(type);
     }
 
+    public <T> T create(TypeRef<T> type, String consumerSourceId) {
+        return current().create(type, consumerSourceId);
+    }
+
+    public <T> T create(Class<T> type, String consumerSourceId) {
+        return current().create(type, consumerSourceId);
+    }
+
     public void inject(Object instance) {
         current().inject(instance);
+    }
+
+    public void inject(Object instance, String consumerSourceId) {
+        current().inject(instance, consumerSourceId);
     }
 
     public Subscription subscribe(Consumer<BeanReadyEvent> listener) {

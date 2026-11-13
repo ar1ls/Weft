@@ -31,14 +31,19 @@ public class PlanBuilder {
         var visiting = new LinkedHashSet<BeanKey>();
         var path = new ArrayList<BeanKey>();
         for (var definition : resolver.definitions()) {
-            this.visit(definition, resolver, properties, plans, visiting, path);
+            this.visit(definition, resolver, properties, plans, visiting, path, definition.source().id());
         }
         return new InitializationPlan(plans, new ArrayList<>(plans.keySet()));
     }
 
     public CreationPlan transientPlan(BeanDefinition definition, DependencyResolver resolver, PropertySource properties, InitializationPlan existing) {
+        return this.transientPlan(definition, resolver, properties, existing, definition.source().id());
+    }
+
+    public CreationPlan transientPlan(BeanDefinition definition, DependencyResolver resolver, PropertySource properties,
+                                     InitializationPlan existing, String consumerSourceId) {
         var plans = new LinkedHashMap<>(existing.beans());
-        this.visit(definition, resolver, properties, plans, new LinkedHashSet<>(), new ArrayList<>());
+        this.visit(definition, resolver, properties, plans, new LinkedHashSet<>(), new ArrayList<>(), consumerSourceId);
         return plans.get(definition.key());
     }
 
@@ -53,7 +58,7 @@ public class PlanBuilder {
         var fields = new ArrayList<ResolvedFieldInjection>();
         for (var injection : InjectionMetadataReader.readFields(implementation)) {
             var keys = new ArrayList<BeanKey>();
-            for (var target : resolver.resolve(injection.dependency())) {
+            for (var target : resolver.resolve(injection.dependency(), declared.definition().source().id())) {
                 keys.add(target.key());
             }
             fields.add(new ResolvedFieldInjection(injection.field(), new ResolvedDependency(injection.dependency(), keys)));
@@ -68,7 +73,8 @@ public class PlanBuilder {
             PropertySource properties,
             Map<BeanKey, CreationPlan> plans,
             Set<BeanKey> visiting,
-            List<BeanKey> path
+            List<BeanKey> path,
+            String consumerSourceId
     ) {
         if (plans.containsKey(definition.key())) {
             return;
@@ -105,7 +111,7 @@ public class PlanBuilder {
                 }
                 List<BeanDefinition> targets;
                 try {
-                    targets = resolver.resolve(dependency);
+                    targets = resolver.resolve(dependency, consumerSourceId);
                 } catch (MissingBeanException e) {
                     throw new MissingBeanException("Missing dependency: " + this.describePath(path, dependency.type().toString())
                             + " at " + dependency.injectionPoint().description() + " for bean: " + definition.key(), e);
@@ -117,7 +123,7 @@ public class PlanBuilder {
                 for (var target : targets) {
                     keys.add(target.key());
                     if (dependency.kind() != DependencyKind.PROVIDER && dependency.kind() != DependencyKind.LAZY) {
-                        this.visit(target, resolver, properties, plans, visiting, path);
+                        this.visit(target, resolver, properties, plans, visiting, path, target.source().id());
                     }
                 }
                 resolved.add(new ResolvedDependency(dependency, keys));

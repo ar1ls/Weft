@@ -3,6 +3,7 @@ package com.github.ar1ls.weft.runtime;
 import com.github.ar1ls.weft.api.BeanScope;
 import com.github.ar1ls.weft.api.Provider;
 import com.github.ar1ls.weft.api.Subscription;
+import com.github.ar1ls.weft.api.SourceDefault;
 import com.github.ar1ls.weft.api.exception.BeanCreationException;
 import com.github.ar1ls.weft.api.lifecycle.BeanReadyEvent;
 import com.github.ar1ls.weft.api.lifecycle.StartupHook;
@@ -58,10 +59,15 @@ public class WeftRuntime implements AutoCloseable {
         this(registry, new PropertyResolver(properties), processors);
     }
 
-    public WeftRuntime(@NonNull BeanRegistry registry, @NonNull PropertyResolver properties, List<? extends BeanProcessor> processors) {
+    public WeftRuntime(BeanRegistry registry, PropertyResolver properties, List<? extends BeanProcessor> processors) {
+        this(registry, properties, processors, List.of());
+    }
+
+    public WeftRuntime(@NonNull BeanRegistry registry, @NonNull PropertyResolver properties,
+                       List<? extends BeanProcessor> processors, @NonNull List<SourceDefault> sourceDefaults) {
         this.processors = List.copyOf(processors);
         this.properties = properties;
-        this.resolver = new DependencyResolver(registry.freeze().values());
+        this.resolver = new DependencyResolver(registry.freeze().values(), sourceDefaults);
         this.plan = new PlanBuilder().build(this.resolver, properties);
         var sources = new HashSet<String>();
         for (var definition : this.resolver.definitions()) {
@@ -206,15 +212,24 @@ public class WeftRuntime implements AutoCloseable {
         return type.cast(this.create(TypeRef.of(type)));
     }
 
-    @SuppressWarnings("unchecked")
     public <T> T create(TypeRef<T> type) {
+        return this.create(type, null);
+    }
+
+    public <T> T create(Class<T> type, String consumerSourceId) {
+        return type.cast(this.create(TypeRef.of(type), consumerSourceId));
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> T create(TypeRef<T> type, String consumerSourceId) {
+        this.validateConsumerSource(consumerSourceId);
         this.enter();
         try {
             var loader = Types.raw(type.type()).getClassLoader();
             var source = new BeanSource(this.transientSourceId, loader == null ? WeftRuntime.class.getClassLoader() : loader);
             var definition = new BeanDefinition(new BeanKey(source.id(), type.toString()), type, "",
                     BeanScope.PROTOTYPE, false, false, source, new ConstructorBeanFactory(type.type()));
-            var transientPlan = new PlanBuilder().transientPlan(definition, this.resolver, this.properties, this.plan);
+            var transientPlan = new PlanBuilder().transientPlan(definition, this.resolver, this.properties, this.plan, consumerSourceId);
             return (T) this.create(transientPlan);
         } finally {
             this.gate.exit();
@@ -222,14 +237,19 @@ public class WeftRuntime implements AutoCloseable {
     }
 
     public void inject(Object instance) {
+        this.inject(instance, null);
+    }
+
+    public void inject(Object instance, String consumerSourceId) {
         Objects.requireNonNull(instance, "instance");
+        this.validateConsumerSource(consumerSourceId);
         this.enter();
         try {
             var injections = InjectionMetadataReader.readFields(instance.getClass());
             var values = new ArrayList<>();
             for (var field : injections) {
                 var keys = new ArrayList<BeanKey>();
-                for (var target : this.resolver.resolve(field.dependency())) {
+                for (var target : this.resolver.resolve(field.dependency(), consumerSourceId)) {
                     keys.add(target.key());
                 }
                 values.add(this.resolveDependency(new ResolvedDependency(field.dependency(), keys)));
@@ -399,6 +419,12 @@ public class WeftRuntime implements AutoCloseable {
             throw new IllegalStateException("Cannot access runtime during cleanup");
         }
         this.gate.enter();
+    }
+
+    private void validateConsumerSource(String sourceId) {
+        if (sourceId != null && sourceId.isBlank()) {
+            throw new IllegalArgumentException("Consumer source id must not be blank");
+        }
     }
 
 }
