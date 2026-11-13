@@ -5,10 +5,14 @@ import com.github.ar1ls.weft.properties.PropertyRequest;
 import java.util.Objects;
 
 public record DependencyDescriptor(TypeRef<?> type, String name, DependencyKind kind, InjectionPoint injectionPoint,
-                                   PropertyRequest property) {
+                                   PropertyRequest property, BeanKey targetKey) {
 
     public DependencyDescriptor(TypeRef<?> type, String name, DependencyKind kind, InjectionPoint point) {
-        this(type, name, kind, point, null);
+        this(type, name, kind, point, null, null);
+    }
+
+    public DependencyDescriptor(TypeRef<?> type, String name, DependencyKind kind, InjectionPoint point, PropertyRequest property) {
+        this(type, name, kind, point, property, null);
     }
 
     public DependencyDescriptor {
@@ -19,6 +23,9 @@ public record DependencyDescriptor(TypeRef<?> type, String name, DependencyKind 
             throw new IllegalArgumentException("Only VALUE dependencies require a property request");
         }
         name = name == null ? "" : name.strip();
+        if (targetKey != null && (kind != DependencyKind.DIRECT || !name.isEmpty())) {
+            throw new IllegalArgumentException("A keyed dependency must be direct and unnamed");
+        }
     }
 
 }

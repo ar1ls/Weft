@@ -248,7 +248,17 @@ public class WeftRuntime implements AutoCloseable {
     }
 
     private Object create(CreationPlan plan) {
-        this.creatingBeans.get().add(plan.definition().key());
+        var path = this.creatingBeans.get();
+        var key = plan.definition().key();
+        if (path.contains(key)) {
+            var chain = new StringJoiner(" -> ");
+            for (var entry : path) {
+                chain.add(entry.toString());
+            }
+            chain.add(key.toString());
+            throw new BeanCreationException("Circular bean creation: " + chain);
+        }
+        path.add(key);
         try {
             return this.instantiate(plan);
         } finally {
@@ -265,16 +275,24 @@ public class WeftRuntime implements AutoCloseable {
             arguments[index] = this.resolveDependency(plan.arguments().get(index));
         }
         var bean = this.creator.create(plan.definition(), arguments);
+        var managedPlan = plan;
         Object exposed;
         try {
+            if (bean.getClass() != Types.raw(plan.definition().type().type())) {
+                var builder = new PlanBuilder();
+                managedPlan = builder.destructionPlan(plan, bean.getClass());
+                if (plan.definition().factory().initialize()) {
+                    managedPlan = builder.instancePlan(managedPlan, bean.getClass(), this.resolver, this.properties);
+                }
+            }
             if (plan.definition().factory().initialize()) {
-                this.initialize(plan, bean);
+                this.initialize(managedPlan, bean);
             }
             exposed = this.process(plan.definition(), bean);
         } catch (RuntimeException | Error e) {
             this.cleaning.set(true);
             try {
-                var cleanup = plan.definition().factory().owned() ? this.shutdown.destroyFailed(new ManagedBean(plan, bean)) : null;
+                var cleanup = plan.definition().factory().owned() ? this.shutdown.destroyFailed(new ManagedBean(managedPlan, bean)) : null;
                 if (cleanup != null) {
                     e.addSuppressed(cleanup);
                 }
@@ -286,7 +304,7 @@ public class WeftRuntime implements AutoCloseable {
             throw e;
         }
         if (plan.definition().scope() == BeanScope.SINGLETON && plan.definition().factory().owned()) {
-            this.shutdown.track(new ManagedBean(plan, bean, exposed));
+            this.shutdown.track(new ManagedBean(managedPlan, bean, exposed));
         }
         return exposed;
     }

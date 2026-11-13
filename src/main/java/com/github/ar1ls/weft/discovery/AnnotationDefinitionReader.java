@@ -64,7 +64,7 @@ public class AnnotationDefinitionReader {
                     continue;
                 }
                 var methodKey = new BeanKey(source.id(), type.getName() + "#" + method.toGenericString());
-                var factory = new MethodBeanFactory(method, type);
+                var factory = new MethodBeanFactory(method, type, key);
                 var product = this.definition(methodKey, TypeRef.of(Types.member(type, method.getDeclaringClass(), method.getGenericReturnType())), method, source, factory);
                 definitions.add(new BeanDefinition(product.key(), product.type(), product.name(), product.scope(), product.lazy(),
                         product.primary(), product.source(), product.factory(), product.missingTypes(),

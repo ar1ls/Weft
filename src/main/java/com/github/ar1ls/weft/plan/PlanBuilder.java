@@ -17,6 +17,7 @@ import com.github.ar1ls.weft.properties.PropertyResolver;
 import com.github.ar1ls.weft.spi.PropertySource;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.Type;
 import java.util.*;
 
 public class PlanBuilder {
@@ -39,6 +40,26 @@ public class PlanBuilder {
         var plans = new LinkedHashMap<>(existing.beans());
         this.visit(definition, resolver, properties, plans, new LinkedHashSet<>(), new ArrayList<>());
         return plans.get(definition.key());
+    }
+
+    public CreationPlan destructionPlan(CreationPlan declared, Class<?> implementation) {
+        var hooks = declared.definition().factory().owned() ? LifecycleMetadataReader.readPreDestroy(implementation) : List.<Method>of();
+        return new CreationPlan(declared.definition(), declared.arguments(), declared.fields(), declared.postConstruct(), hooks, declared.properties());
+    }
+
+    public CreationPlan instancePlan(CreationPlan declared, Type implementation, DependencyResolver resolver, PropertySource properties) {
+        var type = Types.raw(implementation);
+        var bindings = PropertiesBinder.plan(implementation, properties);
+        var fields = new ArrayList<ResolvedFieldInjection>();
+        for (var injection : InjectionMetadataReader.readFields(implementation)) {
+            var keys = new ArrayList<BeanKey>();
+            for (var target : resolver.resolve(injection.dependency())) {
+                keys.add(target.key());
+            }
+            fields.add(new ResolvedFieldInjection(injection.field(), new ResolvedDependency(injection.dependency(), keys)));
+        }
+        var hooks = LifecycleMetadataReader.readPostConstruct(type);
+        return new CreationPlan(declared.definition(), declared.arguments(), fields, hooks, declared.preDestroy(), bindings);
     }
 
     private void visit(

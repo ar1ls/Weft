@@ -3,6 +3,7 @@ package com.github.ar1ls.weft.runtime.factory;
 import com.github.ar1ls.weft.api.exception.BeanCreationException;
 import com.github.ar1ls.weft.api.exception.DefinitionException;
 import com.github.ar1ls.weft.definition.TypeRef;
+import com.github.ar1ls.weft.definition.BeanKey;
 import com.github.ar1ls.weft.runtime.BeanCreator;
 import com.github.ar1ls.weft.runtime.fixtures.BeanDefinitions;
 import com.github.ar1ls.weft.runtime.fixtures.ConstructorDependentBean;
@@ -17,10 +18,12 @@ class MethodBeanFactoryTest {
     @Test
     void declaresOwnerBeforeMethodParameters() throws Exception {
         var method = MethodFactoryFixtures.class.getMethod("dependent", SimpleBean.class);
-        var factory = new MethodBeanFactory(method, MethodFactoryFixtures.class);
+        var ownerKey = new BeanKey("test", MethodFactoryFixtures.class.getName());
+        var factory = new MethodBeanFactory(method, MethodFactoryFixtures.class, ownerKey);
 
         assertEquals(2, factory.dependencies().size());
         assertEquals(TypeRef.of(MethodFactoryFixtures.class), factory.dependencies().get(0).type());
+        assertEquals(ownerKey, factory.dependencies().get(0).targetKey());
         assertEquals(TypeRef.of(SimpleBean.class), factory.dependencies().get(1).type());
         assertTrue(factory.dependencies().get(0).injectionPoint().description().contains("configuration owner"));
     }
@@ -28,7 +31,7 @@ class MethodBeanFactoryTest {
     @Test
     void invokesInstanceMethodWithSuppliedOwnerAndArguments() throws Exception {
         var method = MethodFactoryFixtures.class.getMethod("dependent", SimpleBean.class);
-        var factory = new MethodBeanFactory(method, MethodFactoryFixtures.class);
+        var factory = new MethodBeanFactory(method, MethodFactoryFixtures.class, new BeanKey("test", "owner"));
         var owner = new MethodFactoryFixtures();
         var dependency = new SimpleBean();
 
@@ -60,11 +63,12 @@ class MethodBeanFactoryTest {
     @Test
     void rejectsWrongOwnerAndArgumentCount() throws Exception {
         var method = MethodFactoryFixtures.class.getMethod("dependent", SimpleBean.class);
-        var factory = new MethodBeanFactory(method, MethodFactoryFixtures.class);
+        var factory = new MethodBeanFactory(method, MethodFactoryFixtures.class, new BeanKey("test", "owner"));
 
         assertThrows(IllegalArgumentException.class, () -> factory.create(new Object[0]));
         assertThrows(IllegalArgumentException.class, () -> factory.create(new Object[]{new Object(), new SimpleBean()}));
         assertThrows(DefinitionException.class, () -> new MethodBeanFactory(method, SimpleBean.class));
+        assertThrows(DefinitionException.class, () -> new MethodBeanFactory(method, MethodFactoryFixtures.class));
     }
 
     @Test

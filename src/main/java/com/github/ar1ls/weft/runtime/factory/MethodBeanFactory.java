@@ -2,6 +2,7 @@ package com.github.ar1ls.weft.runtime.factory;
 
 import com.github.ar1ls.weft.api.exception.DefinitionException;
 import com.github.ar1ls.weft.definition.DependencyDescriptor;
+import com.github.ar1ls.weft.definition.BeanKey;
 import com.github.ar1ls.weft.definition.DependencyKind;
 import com.github.ar1ls.weft.definition.InjectionPoint;
 import com.github.ar1ls.weft.definition.TypeRef;
@@ -31,6 +32,10 @@ public class MethodBeanFactory implements BeanFactory {
     List<DependencyDescriptor> dependencies;
 
     public MethodBeanFactory(@NonNull Method method, @NonNull Class<?> ownerType) {
+        this(method, ownerType, null);
+    }
+
+    public MethodBeanFactory(@NonNull Method method, @NonNull Class<?> ownerType, BeanKey ownerKey) {
         if (!Modifier.isPublic(method.getModifiers()) || Modifier.isAbstract(method.getModifiers())
                 || !Modifier.isPublic(method.getDeclaringClass().getModifiers())) {
             throw new DefinitionException("Public concrete factory method required: " + method.toGenericString());
@@ -44,16 +49,19 @@ public class MethodBeanFactory implements BeanFactory {
         if (!this.staticMethod && !method.getDeclaringClass().isAssignableFrom(ownerType)) {
             throw new DefinitionException("Incompatible configuration owner for " + method.toGenericString());
         }
+        if (!this.staticMethod && ownerKey == null) {
+            throw new DefinitionException("Instance factory requires an explicit configuration owner key: " + method.toGenericString());
+        }
 
-        var dependencies = this.createDependencies(method, ownerType);
+        var dependencies = this.createDependencies(method, ownerType, ownerKey);
         this.dependencies = List.copyOf(dependencies);
     }
 
-    private @NonNull ArrayList<DependencyDescriptor> createDependencies(@NonNull Method method, @NonNull Class<?> ownerType) {
+    private @NonNull ArrayList<DependencyDescriptor> createDependencies(Method method, Class<?> ownerType, BeanKey ownerKey) {
         var dependencies = new ArrayList<DependencyDescriptor>();
         if (!this.staticMethod) {
             dependencies.add(new DependencyDescriptor(TypeRef.of(ownerType), "", DependencyKind.DIRECT,
-                    new InjectionPoint(method.toGenericString() + " configuration owner")));
+                    new InjectionPoint(method.toGenericString() + " configuration owner"), null, ownerKey));
         }
         dependencies.addAll(InjectionMetadataReader.readParameters(method, ownerType));
         return dependencies;

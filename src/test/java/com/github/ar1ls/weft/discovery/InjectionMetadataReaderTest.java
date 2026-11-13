@@ -4,6 +4,7 @@ import com.github.ar1ls.weft.api.Provider;
 import com.github.ar1ls.weft.api.exception.DefinitionException;
 import com.github.ar1ls.weft.definition.DependencyKind;
 import com.github.ar1ls.weft.definition.TypeRef;
+import com.github.ar1ls.weft.definition.BeanKey;
 import com.github.ar1ls.weft.runtime.factory.ConstructorBeanFactory;
 import com.github.ar1ls.weft.runtime.factory.MethodBeanFactory;
 import com.github.ar1ls.weft.runtime.fixtures.ProviderDependentBean;
@@ -35,7 +36,7 @@ class InjectionMetadataReaderTest {
     @Test
     void extractsProviderAfterDirectConfigurationOwner() throws Exception {
         var method = ProviderMethodConfiguration.class.getMethod("consumer", Provider.class);
-        var factory = new MethodBeanFactory(method, ProviderMethodConfiguration.class);
+        var factory = new MethodBeanFactory(method, ProviderMethodConfiguration.class, new BeanKey("test", "owner"));
 
         assertEquals(2, factory.dependencies().size());
         assertEquals(DependencyKind.DIRECT, factory.dependencies().get(0).kind());

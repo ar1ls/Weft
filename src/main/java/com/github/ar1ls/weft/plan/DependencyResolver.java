@@ -46,6 +46,9 @@ public class DependencyResolver {
         Types.validate(dependency.type().type());
         var candidates = new ArrayList<BeanDefinition>();
         for (var definition : this.definitions) {
+            if (dependency.targetKey() != null && !dependency.targetKey().equals(definition.key())) {
+                continue;
+            }
             if (Types.matches(dependency.type().type(), definition.type().type())
                     && (dependency.name().isEmpty() || dependency.name().equals(definition.name()))) {
                 candidates.add(definition);
@@ -60,8 +63,9 @@ public class DependencyResolver {
             if (dependency.kind() == DependencyKind.OPTIONAL) {
                 return List.of();
             }
+            var key = dependency.targetKey() == null ? "" : " and key " + dependency.targetKey();
             throw new MissingBeanException("No bean registered for type: " + dependency.type()
-                    + " with name '" + dependency.name() + "' at " + point);
+                    + " with name '" + dependency.name() + "'" + key + " at " + point);
         }
         if (candidates.size() == 1) {
             return List.of(candidates.getFirst());
