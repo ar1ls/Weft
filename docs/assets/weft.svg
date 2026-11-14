@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="320" viewBox="0 0 1200 320" role="img" aria-labelledby="title desc">
+  <title id="title">Weft</title>
+  <desc id="desc">Dependency injection for Java 21. An ivory wordmark and interwoven copper threads on a charcoal background.</desc>
+  <rect width="1200" height="320" fill="#191d20"/>
+  <path d="M48 48H1152M48 272H1152" stroke="#393d3f"/>
+  <text x="64" y="91" fill="#b7b4ac" font-family="Consolas, monospace" font-size="12" letter-spacing="3">JAVA 21 / DEPENDENCY INJECTION</text>
+  <text x="59" y="205" fill="#f1ebdf" font-family="Georgia, 'Times New Roman', serif" font-size="112" letter-spacing="-5">Weft</text>
+  <text x="64" y="244" fill="#b7b4ac" font-family="Arial, Helvetica, sans-serif" font-size="18">Discovery. Dependencies. Lifecycle.</text>
+  <g fill="none" stroke="#505958" stroke-width="12">
+    <path d="M878 79V241M924 79V241M970 79V241M1016 79V241M1062 79V241"/>
+  </g>
+  <g fill="none" stroke="#c38e6c" stroke-width="12">
+    <path d="M838 114H1102M838 160H1102M838 206H1102"/>
+  </g>
+  <g stroke="#191d20" stroke-width="22">
+    <path d="M878 98V130M970 98V130M1062 98V130M924 144V176M1016 144V176M878 190V222M970 190V222M1062 190V222"/>
+  </g>
+  <g stroke="#76827d" stroke-width="12">
+    <path d="M878 96V132M970 96V132M1062 96V132M924 142V178M1016 142V178M878 188V224M970 188V224M1062 188V224"/>
+  </g>
+</svg>

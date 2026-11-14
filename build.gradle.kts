@@ -15,7 +15,7 @@ publishing {
 }
 
 group = "com.github.arl1s.weft"
-version = "1.0-SNAPSHOT"
+version = ""
 
 repositories {
     mavenCentral()

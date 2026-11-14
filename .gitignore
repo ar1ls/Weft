@@ -42,4 +42,3 @@ bin/
 ### Mac OS ###
 .DS_Store
 
-/src/test/java/com/github/ar1ls/weft/sandbox/
