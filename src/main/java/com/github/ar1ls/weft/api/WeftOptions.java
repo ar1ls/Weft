@@ -4,7 +4,7 @@ import com.github.ar1ls.weft.definition.BeanDefinition;
 import com.github.ar1ls.weft.discovery.ScanSource;
 import com.github.ar1ls.weft.spi.BeanProcessor;
 import com.github.ar1ls.weft.spi.DefinitionContributor;
-import org.jspecify.annotations.NonNull;
+import lombok.NonNull;
 
 import java.util.List;
 import java.util.Map;

@@ -15,7 +15,7 @@ import com.github.ar1ls.weft.runtime.fixtures.processor.ProcessorTarget;
 import com.github.ar1ls.weft.runtime.fixtures.processor.ProcessorWrapper;
 import com.github.ar1ls.weft.spi.BeanFactory;
 import com.github.ar1ls.weft.spi.BeanProcessor;
-import org.jspecify.annotations.NonNull;
+import lombok.NonNull;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
