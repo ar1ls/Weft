@@ -30,7 +30,9 @@ Use it to wire a standalone application or embed a container in a host that supp
 
 Weft requires **Java 21 or later**.
 
-The current build defines a Maven publication but leaves its version empty and does not configure a remote publishing repository. There is no released dependency coordinate documented here yet. For development alongside another Gradle project, include this checkout as a subproject:
+Development builds use the commit version `dev-<12-character SHA>`. Stable versions such as `1.0.0` are published manually through the [Release workflow](.github/workflows/release.yml), with a JAR, sources, dependency POM, and checksums attached to a GitHub Release. See [Versions and releases](docs/RELEASING.md) for the release procedure.
+
+There is no remote Maven repository configured. Release downloads are ordinary library artifacts, so the JAR alone does not include its dependencies. For development alongside another Gradle project, include this checkout as a subproject:
 
 ```kotlin
 // settings.gradle.kts in the consuming project

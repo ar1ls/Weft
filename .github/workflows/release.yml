@@ -1,0 +1,119 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version without v (for example, 1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weft-release
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Package selected commit
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      GRADLE_USER_HOME: D:\.gradle
+      RELEASE_VERSION: ${{ inputs.version }}
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      tag: ${{ steps.metadata.outputs.tag }}
+      sha: ${{ steps.metadata.outputs.sha }}
+    steps:
+      - name: Check out selected commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Validate release metadata
+        id: metadata
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = $env:RELEASE_VERSION
+          if ($version -cnotmatch '\A(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\z') {
+            throw 'Version must use MAJOR.MINOR.PATCH without a leading v, for example 1.0.0.'
+          }
+          $tag = "v$version"
+          # An authenticated API read also works for private repositories.
+          $tags = gh api --paginate "repos/$env:GITHUB_REPOSITORY/git/matching-refs/tags/$tag" --jq '.[].ref'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not inspect existing release tags.' }
+          if (@($tags) -contains "refs/tags/$tag") { throw "Tag $tag already exists." }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "sha=$env:GITHUB_SHA" >> $env:GITHUB_OUTPUT
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-disabled: true
+
+      - name: Assemble release artifacts
+        shell: pwsh
+        run: |
+          .\gradlew.bat assemble generatePomFileForMavenJavaPublication "-PreleaseVersion=$env:RELEASE_VERSION" "-PcommitSha=$env:GITHUB_SHA" --no-daemon
+          if ($LASTEXITCODE -ne 0) { throw 'Gradle packaging failed.' }
+
+      - name: Prepare downloads and checksums
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path release-assets | Out-Null
+          Copy-Item -LiteralPath "build/libs/Weft-$env:RELEASE_VERSION.jar" -Destination release-assets
+          Copy-Item -LiteralPath "build/libs/Weft-$env:RELEASE_VERSION-sources.jar" -Destination release-assets
+          Copy-Item -LiteralPath build/publications/mavenJava/pom-default.xml -Destination "release-assets/Weft-$env:RELEASE_VERSION.pom"
+          $checksums = Get-ChildItem -LiteralPath release-assets -File | Sort-Object Name | ForEach-Object {
+            $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+          }
+          $checksums | Set-Content -LiteralPath release-assets/SHA256SUMS -Encoding utf8NoBOM
+
+      - name: Store release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: release-assets/
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish GitHub Release
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: release-assets
+
+      - name: Create tag and release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.package.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.package.outputs.version }}
+          RELEASE_SHA: ${{ needs.package.outputs.sha }}
+        run: |
+          gh release create "$RELEASE_TAG" release-assets/* \
+            --target "$RELEASE_SHA" \
+            --title "Weft $RELEASE_VERSION" \
+            --generate-notes
