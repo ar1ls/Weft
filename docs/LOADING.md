@@ -1,6 +1,6 @@
 # Integrating host classes and modules
 
-[README](../README.md) · [User guide](GUIDE.md)
+[README](../README.md) | [User guide](GUIDE.md)
 
 Weft accepts the class loader your application or platform already uses. You do not need to replace it with a Weft loader or construct a `URLClassLoader` just to use the container.
 

@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="docs/assets/weft.svg" alt="Weft — Dependency injection for Java 21" width="900">
+  <img src="docs/assets/weft.svg" alt="Weft: Dependency injection for Java 21" width="900">
 </p>
 
 <p align="center">
-  <a href="#quick-start">Quick start</a> ·
-  <a href="docs/GUIDE.md">User guide</a> ·
-  <a href="#how-it-works">How it works</a> ·
-  <a href="docs/LOADING.md">Host integration</a> ·
+  <a href="#quick-start">Quick start</a> |
+  <a href="docs/GUIDE.md">User guide</a> |
+  <a href="#how-it-works">How it works</a> |
+  <a href="docs/LOADING.md">Host integration</a> |
   <a href="src/test/java/com/github/ar1ls/weft/sandbox">Examples</a>
 </p>
 
@@ -30,9 +30,18 @@ Use it to wire a standalone application or embed a container in a host that supp
 
 Weft requires **Java 21 or later**.
 
-Development builds use the commit version `dev-<12-character SHA>`. Stable versions such as `1.0.0` are published manually through the [Release workflow](.github/workflows/release.yml), with a JAR, sources, dependency POM, and checksums attached to a GitHub Release. See [Versions and releases](docs/RELEASING.md) for the release procedure.
+Development builds use the commit version `dev-<12-character SHA>`. Stable versions such as `1.0.0` are published manually through the [Release workflow](.github/workflows/release.yml), with a regular JAR, a fat JAR, sources, dependency POM, resolved dependency list, and checksums attached to a GitHub Release. See [Versions and releases](docs/RELEASING.md) for the release procedure.
 
-There is no remote Maven repository configured. Release downloads are ordinary library artifacts, so the JAR alone does not include its dependencies. For development alongside another Gradle project, include this checkout as a subproject:
+There is no remote Maven repository configured. Choose one binary artifact:
+
+| Download | Use it when |
+| --- | --- |
+| `Weft-<version>.jar` | Your dependency manager or host supplies the runtime dependencies listed below. |
+| `Weft-<version>-all.jar` | You need Weft and its runtime dependencies in one library JAR. |
+
+Both are libraries, without a `Main-Class` entry point. The fat JAR includes transitive runtime dependencies, merges service descriptors, and keeps dependency package names unchanged. It does not add a logging backend. Use one binary, not both; prefer the regular JAR when your host already supplies these dependencies or shares their types across class loaders.
+
+For development alongside another Gradle project, include this checkout as a subproject:
 
 ```kotlin
 // settings.gradle.kts in the consuming project
@@ -48,6 +57,22 @@ dependencies {
 ```
 
 Adjust the relative path to your checkout. This uses the library's declared dependencies; copying only its JAR does not include them.
+
+### Runtime dependencies
+
+The current build declares the following runtime libraries:
+
+| Maven artifact | Version |
+| --- | --- |
+| `org.ow2.asm:asm` | `9.10.1` |
+| `org.ow2.asm:asm-tree` | `9.10.1` |
+| `org.slf4j:slf4j-api` | `2.0.9` |
+
+Supply their transitive dependencies too when distributing the regular JAR manually. Each release includes `Weft-<version>-dependencies.txt` with the resolved runtime artifact versions used by that build. The version catalog is [gradle/libs.versions.toml](gradle/libs.versions.toml).
+
+The container logs ready-listener failures through SLF4J; an application can provide one SLF4J 2.x provider to receive those diagnostics. A logging provider is not added by the fat-JAR packaging configuration.
+
+Lombok `1.18.42` is a compile-time annotation processor, and JUnit `6.0.0` is test-only. Neither is required by consumers or included in the fat JAR. Application code does not need Lombok to use Weft.
 
 ## Quick start
 

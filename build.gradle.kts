@@ -1,6 +1,9 @@
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+
 plugins {
     id("java")
     id("maven-publish")
+    id("com.gradleup.shadow") version "9.6.1"
 }
 
 val commitSha = providers.gradleProperty("commitSha").orElse(
@@ -46,6 +49,39 @@ tasks.withType<Jar>().configureEach {
     }
 }
 
+tasks.named<ShadowJar>("shadowJar") {
+    archiveClassifier.set("all")
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    filesMatching("META-INF/services/**") {
+        duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    }
+    mergeServiceFiles()
+    exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA", "META-INF/*.EC")
+    exclude("module-info.class", "META-INF/versions/**/module-info.class")
+    manifest.attributes("Multi-Release" to "true")
+}
+
+tasks.assemble {
+    dependsOn(tasks.named("shadowJar"))
+}
+
+val runtimeArtifacts = configurations.runtimeClasspath.get().incoming.artifacts
+val runtimeDependencyReport = layout.buildDirectory.file("reports/distribution/Weft-$version-dependencies.txt")
+
+tasks.register("writeRuntimeDependencies") {
+    group = "distribution"
+    description = "Writes the resolved runtime artifacts included in the fat JAR."
+    inputs.files(configurations.runtimeClasspath)
+    outputs.file(runtimeDependencyReport)
+    doLast {
+        val report = runtimeDependencyReport.get().asFile
+        report.parentFile.mkdirs()
+        report.writeText(runtimeArtifacts.artifacts.map {
+            "${it.id.componentIdentifier.displayName} (${it.file.name})"
+        }.sorted().joinToString(separator = "\n", postfix = "\n"))
+    }
+}
+
 repositories {
     mavenCentral()
 }
@@ -55,15 +91,10 @@ dependencies {
     implementation(libs.asm)
     implementation(libs.asmtree)
 
-    implementation(libs.log4j)
-    implementation(libs.log4jApi)
     implementation(libs.slf4jApi)
 
     compileOnly(libs.lombok)
     annotationProcessor(libs.lombok)
-
-    implementation(libs.caffeine)
-
 
     testCompileOnly(libs.lombok)
     testAnnotationProcessor(libs.lombok)

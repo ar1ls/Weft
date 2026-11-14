@@ -66,7 +66,7 @@ jobs:
       - name: Assemble release artifacts
         shell: pwsh
         run: |
-          .\gradlew.bat assemble generatePomFileForMavenJavaPublication "-PreleaseVersion=$env:RELEASE_VERSION" "-PcommitSha=$env:GITHUB_SHA" --no-daemon
+          .\gradlew.bat assemble generatePomFileForMavenJavaPublication writeRuntimeDependencies "-PreleaseVersion=$env:RELEASE_VERSION" "-PcommitSha=$env:GITHUB_SHA" --no-daemon
           if ($LASTEXITCODE -ne 0) { throw 'Gradle packaging failed.' }
 
       - name: Prepare downloads and checksums
@@ -74,8 +74,10 @@ jobs:
         run: |
           New-Item -ItemType Directory -Path release-assets | Out-Null
           Copy-Item -LiteralPath "build/libs/Weft-$env:RELEASE_VERSION.jar" -Destination release-assets
+          Copy-Item -LiteralPath "build/libs/Weft-$env:RELEASE_VERSION-all.jar" -Destination release-assets
           Copy-Item -LiteralPath "build/libs/Weft-$env:RELEASE_VERSION-sources.jar" -Destination release-assets
           Copy-Item -LiteralPath build/publications/mavenJava/pom-default.xml -Destination "release-assets/Weft-$env:RELEASE_VERSION.pom"
+          Copy-Item -LiteralPath "build/reports/distribution/Weft-$env:RELEASE_VERSION-dependencies.txt" -Destination release-assets
           $checksums = Get-ChildItem -LiteralPath release-assets -File | Sort-Object Name | ForEach-Object {
             $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             "$hash  $($_.Name)"

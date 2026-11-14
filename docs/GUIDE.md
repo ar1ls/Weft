@@ -1,6 +1,6 @@
 # Using Weft
 
-[← README](../README.md)
+[README](../README.md)
 
 Weft separates bean definitions from running objects. You collect definitions in a builder, start a runtime, and close it when the application stops. Definitions are fixed after startup; lookups do not register new beans.
 
@@ -211,14 +211,12 @@ Here `MessageFormatter` and `ProductionFormatter` are application types; import 
 
 New managed objects follow this sequence:
 
-```text
-constructor / factory
-    → property binding
-    → @Inject fields
-    → @PostConstruct
-    → BeanProcessor chain
-    → exposed object
-```
+1. Call the constructor or factory.
+2. Bind properties.
+3. Populate `@Inject` fields.
+4. Call `@PostConstruct` methods.
+5. Apply the `BeanProcessor` chain.
+6. Return the exposed object.
 
 `@PostConstruct` and `@PreDestroy` methods are instance methods with no arguments and a `void` return type. After eager creation, singleton beans declared with a `StartupHook` contract receive `onStartup()`, including lazy hooks. Prototype hooks do not participate in startup.
 
