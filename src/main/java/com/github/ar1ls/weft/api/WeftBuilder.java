@@ -63,6 +63,10 @@ public class WeftBuilder {
         return this.register(Definitions.of(type));
     }
 
+    public WeftBuilder register(Class<?> type, String sourceId) {
+        return this.register(Definitions.of(type, sourceId));
+    }
+
     public WeftBuilder scan(ScanSource source) {
         this.sources.add(Objects.requireNonNull(source, "source"));
         return this;

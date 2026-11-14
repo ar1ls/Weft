@@ -22,6 +22,14 @@ public class Definitions {
         return definition(type.toString(), type, BeanScope.SINGLETON, false, new ConstructorBeanFactory(type.type()));
     }
 
+    public <T> BeanDefinition of(Class<T> type, String sourceId) {
+        return of(TypeRef.of(type), sourceId);
+    }
+
+    public BeanDefinition of(TypeRef<?> type, String sourceId) {
+        return definition(type.toString(), type, BeanScope.SINGLETON, false, new ConstructorBeanFactory(type.type()), sourceId);
+    }
+
     public BeanDefinition supplied(String id, TypeRef<?> type, BeanScope scope, boolean lazy, Supplier<?> supplier) {
         return definition(id, type, scope, lazy, new SupplierBeanFactory(supplier));
     }
@@ -34,9 +42,13 @@ public class Definitions {
     }
 
     private BeanDefinition definition(String id, TypeRef<?> type, BeanScope scope, boolean lazy, BeanFactory factory) {
+        return definition(id, type, scope, lazy, factory, "programmatic");
+    }
+
+    private BeanDefinition definition(String id, TypeRef<?> type, BeanScope scope, boolean lazy, BeanFactory factory, String sourceId) {
         Types.validate(type.type());
         var loader = Types.raw(type.type()).getClassLoader();
-        var source = new BeanSource("programmatic", loader == null ? Definitions.class.getClassLoader() : loader);
+        var source = new BeanSource(sourceId, loader == null ? Definitions.class.getClassLoader() : loader);
         return new BeanDefinition(new BeanKey(source.id(), id), type, "", scope, lazy, false, source, factory);
     }
 

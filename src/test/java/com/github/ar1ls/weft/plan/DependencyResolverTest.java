@@ -1,5 +1,6 @@
 package com.github.ar1ls.weft.plan;
 
+import com.github.ar1ls.weft.api.SourceDefault;
 import com.github.ar1ls.weft.api.exception.AmbiguousBeanException;
 import com.github.ar1ls.weft.api.exception.DefinitionException;
 import com.github.ar1ls.weft.api.exception.MissingBeanException;
@@ -110,6 +111,83 @@ class DependencyResolverTest {
         var second = this.definition(PlainFormatter.class, "same", "second", false);
 
         assertThrows(DefinitionException.class, () -> new DependencyResolver(List.of(first, second)));
+    }
+
+    @Test
+    void prefersOwnSourceOverExternalPrimaryForSingleTargetDependencies() {
+        var local = this.inSource(this.definition(PlainFormatter.class, "local", "", false), "a");
+        var external = this.inSource(this.definition(BracketFormatter.class, "external", "", true), "b");
+        for (var order : List.of(List.of(local, external), List.of(external, local))) {
+            var resolver = new DependencyResolver(order);
+            for (var kind : List.of(DependencyKind.DIRECT, DependencyKind.OPTIONAL, DependencyKind.PROVIDER, DependencyKind.LAZY)) {
+                assertEquals(List.of(local), resolver.resolve(this.request(kind, ""), "a"));
+                assertEquals(List.of(external), resolver.resolve(this.request(kind, ""), "b"));
+            }
+            assertEquals(external, resolver.resolve(Formatter.class));
+            assertEquals(List.of(external), resolver.resolve(this.request(DependencyKind.DIRECT, ""), "other"));
+        }
+    }
+
+    @Test
+    void rejectsLocalAmbiguityEvenWhenAnExternalPrimaryExists() {
+        var first = this.inSource(this.definition(PlainFormatter.class, "first", "", false), "a");
+        var second = this.inSource(this.definition(BracketFormatter.class, "second", "", false), "a");
+        var external = this.inSource(this.definition(BracketFormatter.class, "external", "", true), "b");
+        var resolver = new DependencyResolver(List.of(first, second, external));
+
+        var failure = assertThrows(AmbiguousBeanException.class,
+                () -> resolver.resolve(this.request(DependencyKind.DIRECT, ""), "a"));
+        assertTrue(failure.getMessage().contains(first.key().toString()));
+        assertTrue(failure.getMessage().contains(second.key().toString()));
+        assertFalse(failure.getMessage().contains(external.key().toString()));
+    }
+
+    @Test
+    void selectsPrimaryWithinOwnSourceAndRejectsMultipleLocalPrimaries() {
+        var first = this.inSource(this.definition(PlainFormatter.class, "first", "", false), "a");
+        var primary = this.inSource(this.definition(BracketFormatter.class, "primary", "", true), "a");
+        var external = this.inSource(this.definition(BracketFormatter.class, "external", "", true), "b");
+        var resolver = new DependencyResolver(List.of(first, primary, external));
+        assertEquals(List.of(primary), resolver.resolve(this.request(DependencyKind.DIRECT, ""), "a"));
+
+        var anotherPrimary = this.inSource(this.definition(PlainFormatter.class, "another", "", true), "a");
+        var ambiguous = new DependencyResolver(List.of(primary, anotherPrimary, external));
+        assertThrows(AmbiguousBeanException.class,
+                () -> ambiguous.resolve(this.request(DependencyKind.DIRECT, ""), "a"));
+    }
+
+    @Test
+    void preservesExplicitNamesKeysAndDefaultsOverLocalPreference() {
+        var local = this.inSource(this.definition(PlainFormatter.class, "local", "shared", false), "a");
+        var external = this.inSource(this.definition(BracketFormatter.class, "external", "shared", true), "b");
+        var resolver = new DependencyResolver(List.of(local, external));
+        assertEquals(List.of(external), resolver.resolve(this.request(DependencyKind.DIRECT, "shared"), "a"));
+        var keyed = new DependencyDescriptor(TypeRef.of(Formatter.class), "", DependencyKind.DIRECT,
+                new InjectionPoint("keyed fixture"), null, external.key());
+        assertEquals(List.of(external), resolver.resolve(keyed, "a"));
+
+        var withDefault = new DependencyResolver(List.of(local, external),
+                List.of(new SourceDefault("a", TypeRef.of(Formatter.class), external.key())));
+        assertEquals(List.of(external), withDefault.resolve(this.request(DependencyKind.DIRECT, ""), "a"));
+    }
+
+    @Test
+    void collectionsKeepAllSourcesAndContextFreeLookupRemainsAmbiguous() {
+        var local = this.inSource(this.definition(PlainFormatter.class, "local", "", false), "a");
+        var external = this.inSource(this.definition(BracketFormatter.class, "external", "", false), "b");
+        var resolver = new DependencyResolver(List.of(external, local));
+        for (var kind : List.of(DependencyKind.LIST, DependencyKind.SET)) {
+            assertEquals(List.of(local, external), resolver.resolve(this.request(kind, ""), "a"));
+        }
+        assertThrows(AmbiguousBeanException.class, () -> resolver.resolve(Formatter.class));
+        assertThrows(AmbiguousBeanException.class,
+                () -> resolver.resolve(this.request(DependencyKind.DIRECT, ""), "other"));
+    }
+
+    private BeanDefinition inSource(BeanDefinition definition, String sourceId) {
+        var source = new BeanSource(sourceId, definition.source().classLoader());
+        return new BeanDefinition(new BeanKey(sourceId, definition.key().localId()), definition.type(), definition.name(),
+                definition.scope(), definition.lazy(), definition.primary(), source, definition.factory());
     }
 
     private BeanDefinition definition(Class<?> type, String id, String name, boolean primary) {

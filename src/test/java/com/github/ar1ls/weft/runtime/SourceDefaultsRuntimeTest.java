@@ -2,6 +2,7 @@ package com.github.ar1ls.weft.runtime;
 
 import com.github.ar1ls.weft.Weft;
 import com.github.ar1ls.weft.api.BeanScope;
+import com.github.ar1ls.weft.api.annotations.Inject;
 import com.github.ar1ls.weft.api.Definitions;
 import com.github.ar1ls.weft.api.WeftBuilder;
 import com.github.ar1ls.weft.api.exception.AmbiguousBeanException;
@@ -26,6 +27,55 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 class SourceDefaultsRuntimeTest {
+
+    @Test
+    void explicitSourceRegistrationsSelectLocalDependenciesForManagedAndExternalObjects() {
+        var first = Definitions.of(LocalServiceA.class, "a");
+        var second = Definitions.of(TypeRef.of(LocalServiceB.class), "b");
+        assertEquals("a", first.key().sourceId());
+        assertEquals("a", first.source().id());
+        assertSame(LocalServiceA.class.getClassLoader(), first.source().classLoader());
+        assertEquals("b", second.key().sourceId());
+        assertEquals("programmatic", Definitions.of(LocalServiceA.class).source().id());
+        assertThrows(IllegalArgumentException.class, () -> Weft.builder().register(LocalServiceA.class, " "));
+        assertThrows(NullPointerException.class, () -> Weft.builder().register(LocalServiceA.class, null));
+
+        try (var runtime = Weft.builder().register(LocalServiceA.class, "a").register(LocalServiceB.class, "b")
+                .register(LocalConsumerA.class, "a").register(LocalConsumerB.class, "b").start()) {
+            var firstConsumer = runtime.get(LocalConsumerA.class);
+            var secondConsumer = runtime.get(LocalConsumerB.class);
+            assertSame(runtime.get(LocalServiceA.class), firstConsumer.service);
+            assertSame(runtime.get(LocalServiceB.class), secondConsumer.service);
+            var external = new LocalConsumerB();
+            runtime.inject(external, "a");
+            assertSame(firstConsumer.service, external.service);
+            assertSame(secondConsumer.service, runtime.create(LocalConsumerA.class, "b").service);
+            assertThrows(AmbiguousBeanException.class, () -> runtime.get(LocalService.class));
+            assertThrows(AmbiguousBeanException.class, () -> runtime.create(LocalConsumerA.class));
+        }
+    }
+
+    public interface LocalService {
+    }
+
+    public static class LocalServiceA implements LocalService {
+    }
+
+    public static class LocalServiceB implements LocalService {
+    }
+
+    public static class LocalConsumerA {
+        final LocalService service;
+
+        public LocalConsumerA(LocalService service) {
+            this.service = service;
+        }
+    }
+
+    public static class LocalConsumerB {
+        @Inject
+        LocalService service;
+    }
 
     @Test
     void factoryDiscoversDefinitionContributorAndScanSourcesWhileExplicitDefaultsWin() throws Exception {

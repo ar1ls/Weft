@@ -133,7 +133,7 @@ try (var runtime = Weft.builder().scan(source).start()) {
 }
 ```
 
-`register(Class)` is an explicit constructor-based singleton registration. Use scanning for `@Configuration` methods, scope annotations, and registration conditions. The scanner skips nested classes; use top-level classes for scanned beans.
+`register(Class, "source-id")` assigns an explicit source; `register(Class)` keeps the default `programmatic` source. Unnamed single-target dependencies prefer matching beans from their own source before using external candidates. These are explicit constructor-based singleton registrations. Use scanning for `@Configuration` methods, scope annotations, and registration conditions. The scanner skips nested classes; use top-level classes for scanned beans.
 
 ## How it works
 
@@ -149,7 +149,7 @@ The plan is available through `runtime.report()`. Dependencies discovered only a
 
 | Situation | Behavior |
 | --- | --- |
-| Multiple candidates | `@Named` filters first; `@Primary` selects among remaining candidates. Unresolved ambiguity is an error. |
+| Multiple candidates | Explicit names, keys, and source defaults take precedence. Otherwise, unnamed single-target injection prefers the consumer source, then falls back to all sources; `@Primary` selects within that group. Unresolved ambiguity is an error. |
 | Optional dependency | `Optional<T>` permits absence, but still rejects ambiguity. |
 | Deferred dependency | `Provider<T>` works with concrete types; `@Lazy` injection requires a non-sealed interface. |
 | Existing object | `inject(instance)` fills `@Inject` fields only. The caller keeps ownership. |

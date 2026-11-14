@@ -41,7 +41,7 @@ try (var runtime = builder.start()) {
 }
 ```
 
-The first argument to `instance` or `supplied` is a definition ID, not an injection qualifier. These helpers use the source ID `programmatic` and an empty bean name. Use an explicit `BeanDefinition` when you need control over its key, name, source, primary flag, or factory.
+The first argument to `instance` or `supplied` is a definition ID, not an injection qualifier. These helpers use the source ID `programmatic` and an empty bean name. `register(SomeClass.class, "billing")` and `Definitions.of(SomeClass.class, "billing")` assign a source to a constructor-based singleton; `Definitions.of(typeRef, "billing")` also supports generic types. The no-source overloads retain `programmatic`. Explicit source IDs must be non-null and nonblank. Use an explicit `BeanDefinition` when you need control over the full key, name, primary flag, or factory.
 
 `register(SomeClass.class)` creates a constructor-based singleton definition. It does not interpret class-level scope, lazy, or registration-condition annotations and does not expand `@Configuration` factory methods. Property binding, field injection, and lifecycle handling still apply.
 
@@ -108,7 +108,9 @@ Constructor parameters and fields marked `@Inject` can request:
 
 `Provider` is `com.github.ar1ls.weft.api.Provider`. Nested dependency wrappers such as `Provider<List<T>>` are unsupported.
 
-Use `@Named("name")` on a scanned bean or factory method and on its consumer to select a named candidate. `@Primary` supplies the preferred candidate when more than one remains. Name filtering happens before primary selection; neither changes collection injection into a single-result lookup.
+Use `@Named("name")` on a scanned bean or factory method and on its consumer to select a named candidate. Explicit names and target keys bypass automatic source preference. An applicable source default also takes precedence. Otherwise, unnamed single-target dependencies first consider candidates with the consumer's source ID; only when that group is empty do they consider all sources. `@Primary` selects within the chosen group, so an external primary cannot override a local candidate or resolve ambiguity between local candidates. More than one local candidate still requires one local primary or explicit selection.
+
+This rule applies to constructor, field, and factory-method injection, including optional, provider, and lazy dependencies. Lists and sets keep all matching sources. Top-level `get` has no consumer source and retains global selection. For external objects, `create(type, sourceId)` and `inject(instance, sourceId)` supply the consumer context explicitly; without it, selection remains global. Source IDs group candidates rather than isolating them: an unknown source still falls back to ordinary global selection.
 
 Fields marked `@Inject` must be non-static and non-final. Constructor injection is useful when you want final fields and dependencies visible in the type's API.
 
@@ -271,7 +273,7 @@ Override one source with a ready object:
 builder.sourceDefault("billing", Logger.class, LoggerFactory.getLogger("Billing"));
 ```
 
-Selection priority is an explicit name or target key, a per-source rule, a general source-default factory, then ordinary candidate resolution. Defaults apply to single-target dependencies, including optional, provider, and lazy requests. Lists and sets still collect every matching candidate.
+Selection priority is an explicit name or target key, a per-source rule, a general source-default factory, then same-source candidates with global fallback. Primary selection runs within the selected candidate group. An explicit default or generated default remains stronger than a local bean; remove that default if ordinary local selection should apply. Defaults apply to single-target dependencies, including optional, provider, and lazy requests. Lists and sets still collect every matching candidate.
 
 The object overload registers a borrowed singleton named after the source ID. It is already initialized and is not closed by Weft. To point at an existing definition while retaining its scope and ownership, use `sourceDefault(sourceId, typeRef, targetBeanKey)` instead.
 

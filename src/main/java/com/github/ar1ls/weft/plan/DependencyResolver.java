@@ -97,6 +97,17 @@ public class DependencyResolver {
             throw new MissingBeanException("No bean registered for type: " + dependency.type()
                     + " with name '" + dependency.name() + "'" + key + " at " + point);
         }
+        if (consumerSourceId != null && targetKey == null && dependency.name().isEmpty()) {
+            var localCandidates = new ArrayList<BeanDefinition>();
+            for (var candidate : candidates) {
+                if (consumerSourceId.equals(candidate.source().id())) {
+                    localCandidates.add(candidate);
+                }
+            }
+            if (!localCandidates.isEmpty()) {
+                candidates = localCandidates;
+            }
+        }
         if (candidates.size() == 1) {
             return List.of(candidates.getFirst());
         }

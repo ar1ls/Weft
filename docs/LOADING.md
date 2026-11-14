@@ -137,7 +137,7 @@ System.out.println(listener.destination());
 
 `HostListener` already exists, so Weft fills only its `@Inject` field with reports' context. It does not bind properties or call lifecycle methods on that external object. This fits objects constructed by another framework, such as commands, listeners, and request handlers.
 
-The source ID selects dependency defaults. It does not load `ExportJob` through the billing loader or move the object into that loader. These calls use an already-resolved Java class or existing instance. Unknown source IDs do not create new defaults after startup.
+The source ID selects dependency defaults and otherwise prefers matching unnamed single-target dependencies from that source before falling back to all sources. Explicit names and collection injection keep their global behavior. It does not load `ExportJob` through the billing loader or move the object into that loader. These calls use an already-resolved Java class or existing instance. Unknown source IDs do not create new defaults after startup.
 
 ## 7. Let a host create its own loader when needed
 
@@ -172,4 +172,4 @@ Close the runtime before a host-owned loader. If startup throws, the outer resou
 | Loader without an explicit root | No whole-loader or whole-classpath enumeration. |
 | Host already has `Class<?>` objects | Can use explicit definitions instead of file scanning. |
 
-For an already-loaded concrete class, `builder.register(type)` uses that class directly, but the helper creates a singleton in source `programmatic`. If you need a host source ID or annotation-driven configuration methods and conditions without scanning, use `AnnotationDefinitionReader.read(type, new BeanSource(id, loader))` and register its returned definitions. Supply the reader a `PropertyResolver` consistent with the builder properties used for that startup; the reader evaluates annotation conditions when reading definitions.
+For an already-loaded concrete class, `builder.register(type, sourceId)` creates a constructor-based singleton with an explicit host source ID; `builder.register(type)` retains source `programmatic`. To interpret annotation-driven configuration methods and conditions without scanning, use `AnnotationDefinitionReader.read(type, new BeanSource(id, loader))` and register its returned definitions. Supply the reader a `PropertyResolver` consistent with the builder properties used for that startup; the reader evaluates annotation conditions when reading definitions.
