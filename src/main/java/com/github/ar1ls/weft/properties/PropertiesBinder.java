@@ -59,6 +59,11 @@ public class PropertiesBinder {
                 }
                 var value = properties.find(key);
                 var fieldType = Types.member(context, owner, field.getGenericType());
+
+                if (env != null && !env.defaultValue().isEmpty()) {
+                    value = value.filter(v -> !v.isBlank());
+                }
+
                 if (value.isEmpty()) {
                     value = defaultValue(property, env);
                 }

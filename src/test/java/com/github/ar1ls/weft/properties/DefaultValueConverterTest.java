@@ -75,4 +75,16 @@ class DefaultValueConverterTest {
         assertNull(exception.getCause());
     }
 
+    @Test
+    void convertsDefaultInt() {
+        assertEquals(
+                8,
+                DefaultValueConverter.convert(
+                        "CFG_S3_THREADS",
+                        "8",
+                        int.class
+                )
+        );
+    }
+
 }
