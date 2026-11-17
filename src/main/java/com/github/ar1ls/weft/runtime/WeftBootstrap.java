@@ -5,6 +5,7 @@ import com.github.ar1ls.weft.api.exception.DefinitionException;
 import com.github.ar1ls.weft.definition.BeanSource;
 import com.github.ar1ls.weft.discovery.AnnotationDefinitionReader;
 import com.github.ar1ls.weft.discovery.BeanScanner;
+import com.github.ar1ls.weft.discovery.ConditionalExclusions;
 import com.github.ar1ls.weft.properties.PropertyResolver;
 import lombok.NonNull;
 import lombok.experimental.UtilityClass;
@@ -38,6 +39,7 @@ public class WeftBootstrap {
         var roots = new LinkedHashMap<String, Path>();
         var scanned = new HashSet<String>();
         var reader = new AnnotationDefinitionReader(properties);
+        var exclusions = new ConditionalExclusions(properties);
         var scanner = new BeanScanner();
         for (var scan : options.sources()) {
             var previous = sources.putIfAbsent(scan.source().id(), scan.source());
@@ -51,6 +53,7 @@ public class WeftBootstrap {
                     if (!scanned.add(scan.source().id() + ":" + type.getName())) {
                         continue;
                     }
+                    exclusions.inspect(type, scan.source());
                     for (var definition : reader.read(type, scan.source())) {
                         registry.register(definition);
                     }
@@ -58,7 +61,7 @@ public class WeftBootstrap {
             }
         }
         var defaults = SourceDefaults.expand(registry, sources.values(), options.sourceDefaults(), options.sourceDefaultFactories());
-        var runtime = new WeftRuntime(registry, properties, options.processors(), defaults);
+        var runtime = new WeftRuntime(registry, properties, options.processors(), defaults, exclusions.entries());
         runtime.start();
         return runtime;
     }

@@ -1,3 +1,4 @@
+
 package com.github.ar1ls.weft.runtime;
 
 import com.github.ar1ls.weft.api.BeanScope;
@@ -8,6 +9,7 @@ import com.github.ar1ls.weft.api.exception.BeanCreationException;
 import com.github.ar1ls.weft.api.lifecycle.BeanReadyEvent;
 import com.github.ar1ls.weft.api.lifecycle.StartupHook;
 import com.github.ar1ls.weft.definition.*;
+import com.github.ar1ls.weft.discovery.ConditionalExclusions.ExcludedBean;
 import com.github.ar1ls.weft.discovery.InjectionMetadataReader;
 import com.github.ar1ls.weft.plan.*;
 import com.github.ar1ls.weft.properties.PreparedProperty;
@@ -65,18 +67,38 @@ public class WeftRuntime implements AutoCloseable {
 
     public WeftRuntime(@NonNull BeanRegistry registry, @NonNull PropertyResolver properties,
                        List<? extends BeanProcessor> processors, @NonNull List<SourceDefault> sourceDefaults) {
+        this(registry, properties, processors, sourceDefaults, List.of());
+    }
+
+    public WeftRuntime(@NonNull BeanRegistry registry, @NonNull PropertyResolver properties,
+                       List<? extends BeanProcessor> processors, @NonNull List<SourceDefault> sourceDefaults,
+                       @NonNull Collection<ExcludedBean> exclusions) {
         this.processors = List.copyOf(processors);
         this.properties = properties;
-        this.resolver = new DependencyResolver(registry.freeze().values(), sourceDefaults);
+
+        var pruned = ConditionalDependencyPruner.prune(
+                registry.freeze().values(),
+                sourceDefaults,
+                exclusions
+        );
+
+        this.resolver = new DependencyResolver(
+                pruned.definitions(),
+                pruned.defaults()
+        );
+
         this.plan = new PlanBuilder().build(this.resolver, properties);
+
         var sources = new HashSet<String>();
         for (var definition : this.resolver.definitions()) {
             sources.add(definition.source().id());
         }
+
         var sourceId = "weft-transient";
         while (sources.contains(sourceId)) {
             sourceId += "_";
         }
+
         this.transientSourceId = sourceId;
     }
 
@@ -171,6 +193,7 @@ public class WeftRuntime implements AutoCloseable {
         if (!this.creatingBeans.get().isEmpty()) {
             this.shutdown.recordDependency(this.creatingBeans.get().getLast(), definition.key());
         }
+
         if (definition.scope() == BeanScope.PROTOTYPE) {
             if (!this.creatingPrototypes.get().add(definition.key())) {
                 throw new BeanCreationException("Circular prototype creation: " + definition.key());
@@ -184,6 +207,7 @@ public class WeftRuntime implements AutoCloseable {
                 }
             }
         }
+
         var instance = this.singletons.getOrCreate(definition.key(), () -> this.create(this.plan.beans().get(definition.key())));
         if (this.published.add(definition.key())) {
             this.subscriptions.publish(new BeanReadyEvent(definition, instance));
