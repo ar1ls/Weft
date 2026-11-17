@@ -10,6 +10,7 @@
   <a href="docs/LOADING.md">Host integration</a> |
   <a href="src/test/java/com/github/ar1ls/weft/sandbox">Examples</a>
 </p>
+
 # Weft
 
 Weft is a dependency injection container for Java 21. It discovers or accepts bean definitions, plans their dependencies before startup, and manages object creation and shutdown.
