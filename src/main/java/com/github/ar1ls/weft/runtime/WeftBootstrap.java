@@ -53,8 +53,10 @@ public class WeftBootstrap {
                     if (!scanned.add(scan.source().id() + ":" + type.getName())) {
                         continue;
                     }
-                    exclusions.inspect(type, scan.source());
-                    for (var definition : reader.read(type, scan.source())) {
+
+                    var evaluated = exclusions.inspect(type, scan.source());
+
+                    for (var definition : reader.read(type, scan.source(), evaluated)) {
                         registry.register(definition);
                     }
                 }

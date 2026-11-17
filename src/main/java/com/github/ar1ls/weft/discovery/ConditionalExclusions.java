@@ -1,61 +1,79 @@
+
 package com.github.ar1ls.weft.discovery;
 
 import com.github.ar1ls.weft.api.annotations.Bean;
 import com.github.ar1ls.weft.api.annotations.Configuration;
 import com.github.ar1ls.weft.api.annotations.Named;
-import com.github.ar1ls.weft.api.annotations.condition.ConditionalOnEnv;
-import com.github.ar1ls.weft.api.annotations.condition.ConditionalOnProperty;
 import com.github.ar1ls.weft.definition.BeanKey;
 import com.github.ar1ls.weft.definition.BeanSource;
 import com.github.ar1ls.weft.definition.TypeRef;
 import com.github.ar1ls.weft.definition.Types;
 import com.github.ar1ls.weft.spi.PropertySource;
 import lombok.AccessLevel;
+import lombok.NonNull;
 import lombok.experimental.FieldDefaults;
+import lombok.extern.slf4j.Slf4j;
 
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
-import java.util.*;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 
+@Slf4j
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class ConditionalExclusions {
 
+    @NonNull
     PropertySource properties;
     Map<BeanKey, ExcludedBean> excluded = new LinkedHashMap<>();
 
-    public ConditionalExclusions(PropertySource properties) {
-        this.properties = Objects.requireNonNull(properties, "properties");
+    public ConditionalExclusions(@NonNull PropertySource properties) {
+        this.properties = properties;
     }
 
-    public void inspect(Class<?> type, BeanSource source) {
-        Objects.requireNonNull(type, "type");
-        Objects.requireNonNull(source, "source");
-
+    public ConditionEvaluator.Evaluation inspect(@NonNull Class<?> type, @NonNull BeanSource source) {
         var configuration = type.isAnnotationPresent(Configuration.class);
         if (!configuration && !type.isAnnotationPresent(Bean.class)) {
-            return;
+            return new ConditionEvaluator.Evaluation(true, "");
+        }
+        var owner = ConditionEvaluator.evaluate(type, this.properties);
+        if (!owner.matches()) {
+            this.add(
+                    new BeanKey(source.id(), type.getName()),
+                    TypeRef.of(type),
+                    name(type),
+                    owner.reason()
+            );
         }
 
-        var ownerMatches = ConditionEvaluator.matches(type, this.properties);
-        if (!ownerMatches) {
-            this.add(new BeanKey(source.id(), type.getName()), TypeRef.of(type),
-                    name(type), describe(type));
-        }
         if (!configuration) {
-            return;
+            return owner;
         }
 
         for (Method method : type.getMethods()) {
             if (!method.isAnnotationPresent(Bean.class) || method.isBridge() || method.isSynthetic()) {
                 continue;
             }
-            if (ownerMatches && ConditionEvaluator.matches(method, this.properties)) {
+            var condition = owner.matches()
+                    ? ConditionEvaluator.evaluate(method, this.properties)
+                    : owner;
+            if (condition.matches()) {
                 continue;
             }
-            var typeRef = TypeRef.of(Types.member(type, method.getDeclaringClass(), method.getGenericReturnType()));
-            var key = new BeanKey(source.id(), type.getName() + "#" + method.toGenericString());
-            this.add(key, typeRef, name(method), ownerMatches ? describe(method) : "owner " + describe(type));
+            var typeRef = TypeRef.of(Types.member(
+                    type,
+                    method.getDeclaringClass(),
+                    method.getGenericReturnType()
+            ));
+            var key = new BeanKey(
+                    source.id(),
+                    type.getName() + "#" + method.toGenericString()
+            );
+            this.add(key, typeRef, name(method), condition.reason());
         }
+        return owner;
     }
 
     public List<ExcludedBean> entries() {
@@ -63,7 +81,12 @@ public class ConditionalExclusions {
     }
 
     private void add(BeanKey key, TypeRef<?> type, String name, String reason) {
-        this.excluded.putIfAbsent(key, new ExcludedBean(key, type, name, reason));
+        if (this.excluded.putIfAbsent(
+                key,
+                new ExcludedBean(key, type, name, reason)
+        ) == null) {
+            log.warn("SKIPPED bean {}: {}", key, reason);
+        }
     }
 
     private static String name(AnnotatedElement element) {
@@ -71,20 +94,12 @@ public class ConditionalExclusions {
         return named == null ? "" : named.value().strip();
     }
 
-    private static String describe(AnnotatedElement element) {
-        var parts = new ArrayList<String>();
-        var env = element.getAnnotation(ConditionalOnEnv.class);
-        var property = element.getAnnotation(ConditionalOnProperty.class);
-        if (env != null) {
-            parts.add("@ConditionalOnEnv" + Arrays.toString(env.name()));
-        }
-        if (property != null) {
-            parts.add("@ConditionalOnProperty" + Arrays.toString(property.name()));
-        }
-        return String.join(" and ", parts);
-    }
-
-    public record ExcludedBean(BeanKey key, TypeRef<?> type, String name, String reason) {
+    public record ExcludedBean(
+            BeanKey key,
+            TypeRef<?> type,
+            String name,
+            String reason
+    ) {
         public ExcludedBean {
             Objects.requireNonNull(key, "key");
             Objects.requireNonNull(type, "type");
@@ -92,5 +107,5 @@ public class ConditionalExclusions {
             name = name == null ? "" : name.strip();
         }
     }
-    
+
 }
