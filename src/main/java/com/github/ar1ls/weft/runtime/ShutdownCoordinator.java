@@ -17,6 +17,7 @@ public class ShutdownCoordinator {
     Map<BeanKey, ManagedBean> beans = new LinkedHashMap<>();
     Map<BeanKey, Set<BeanKey>> dependencies = new LinkedHashMap<>();
     Set<Object> destroyed = Collections.newSetFromMap(new IdentityHashMap<>());
+    List<InstanceFields> instanceFields = new ArrayList<>();
 
     public synchronized void track(ManagedBean bean) {
         for (var managed : this.beans.values()) {
@@ -28,6 +29,10 @@ public class ShutdownCoordinator {
             }
         }
         this.beans.put(bean.plan().definition().key(), bean);
+    }
+
+    public synchronized void trackInstanceFields(InstanceFields fields) {
+        this.instanceFields.add(fields);
     }
 
     public synchronized void recordDependency(BeanKey consumer, BeanKey dependency) {
@@ -57,6 +62,10 @@ public class ShutdownCoordinator {
                 }
             }
         } finally {
+            for (var fields : this.instanceFields) {
+                fields.clear(failure);
+            }
+            this.instanceFields.clear();
             this.beans.clear();
             this.dependencies.clear();
             this.destroyed.clear();

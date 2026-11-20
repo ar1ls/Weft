@@ -319,6 +319,7 @@ public class WeftRuntime implements AutoCloseable {
             arguments[index] = this.resolveDependency(plan.arguments().get(index));
         }
         var bean = this.creator.create(plan.definition(), arguments);
+        var instanceFields = new InstanceFields(bean);
         var managedPlan = plan;
         Object exposed;
         try {
@@ -330,7 +331,7 @@ public class WeftRuntime implements AutoCloseable {
                 }
             }
             if (plan.definition().factory().initialize()) {
-                this.initialize(managedPlan, bean);
+                this.initialize(managedPlan, bean, instanceFields);
             }
             exposed = this.process(plan.definition(), bean);
         } catch (RuntimeException | Error e) {
@@ -343,12 +344,16 @@ public class WeftRuntime implements AutoCloseable {
             } catch (RuntimeException | Error cleanup) {
                 e.addSuppressed(cleanup);
             } finally {
+                instanceFields.clear(e);
                 this.cleaning.remove();
             }
             throw e;
         }
         if (plan.definition().scope() == BeanScope.SINGLETON && plan.definition().factory().owned()) {
             this.shutdown.track(new ManagedBean(managedPlan, bean, exposed));
+        }
+        if (instanceFields.isBound()) {
+            this.shutdown.trackInstanceFields(instanceFields);
         }
         return exposed;
     }
@@ -371,7 +376,7 @@ public class WeftRuntime implements AutoCloseable {
         return exposed;
     }
 
-    private void initialize(CreationPlan plan, Object bean) {
+    private void initialize(CreationPlan plan, Object bean, InstanceFields instanceFields) {
         PropertiesBinder.bind(plan.properties(), bean);
         for (var injection : plan.fields()) {
             var value = this.resolveDependency(injection.dependency());
@@ -381,6 +386,9 @@ public class WeftRuntime implements AutoCloseable {
                 throw new BeanCreationException("Cannot inject field " + injection.field().toGenericString()
                         + " for bean: " + plan.definition().key(), e);
             }
+        }
+        if (plan.definition().scope() == BeanScope.SINGLETON) {
+            instanceFields.bind();
         }
         for (var hook : plan.postConstruct()) {
             try {

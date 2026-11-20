@@ -98,6 +98,18 @@ Use `@Named("name")` on a scanned bean or factory method and on its consumer to 
 This rule applies to constructor, field, and factory-method injection, including optional, provider, and lazy dependencies. Lists and sets keep all matching sources. Top-level `get` has no consumer source and retains global selection. For external objects, `create(type, sourceId)` and `inject(instance, sourceId)` supply the consumer context explicitly; without it, selection remains global.
 Source IDs group candidates rather than isolating them: an unknown source still falls back to ordinary global selection.
 Fields marked `@Inject` must be non-static and non-final. Constructor injection is useful when you want final fields and dependencies visible in the type's API.
+
+Use `@Instance` to expose a singleton through a static field declared in its implementation class:
+
+```java
+@Bean
+public class DefaultFormatter implements Formatter {
+    @Instance
+    private static volatile Formatter instance;
+}
+```
+
+The field must be non-final and have the implementation type or one of its interfaces. Weft fills a `null` field with the original singleton after property and dependency injection, before `@PostConstruct`. This applies when Weft initializes a singleton, including one returned by a factory method. During failed creation or shutdown Weft clears a field it filled if it still holds that singleton. Use `volatile` when reading the field from other threads.
 ### Generic contracts
 
 ```java

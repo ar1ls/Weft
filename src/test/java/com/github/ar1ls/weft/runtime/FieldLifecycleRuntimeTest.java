@@ -35,6 +35,77 @@ class FieldLifecycleRuntimeTest {
     }
 
     @Test
+    void bindsAnnotatedStaticFieldsBeforePostConstructAndClearsThemOnClose() {
+        try (var runtime = this.runtimeFor(BeanDefinitions.of(InstanceFieldBean.class), BeanDefinitions.of(SimpleBean.class))) {
+            runtime.start();
+
+            var bean = runtime.get(InstanceFieldBean.class);
+            assertSame(bean, InstanceFieldBean.getInstance());
+            assertSame(bean, InstanceFieldBean.getContract());
+            assertSame(bean, bean.getObserved());
+            assertSame(runtime.get(SimpleBean.class), bean.getObservedDependency());
+            assertNull(InstanceFieldBean.getUnannotated());
+        }
+        assertNull(InstanceFieldBean.getInstance());
+        assertNull(InstanceFieldBean.getContract());
+    }
+
+    @Test
+    void bindsImplementationFieldsForBeanReturnedByFactoryThroughInterface() throws Exception {
+        var method = InstanceFieldBean.class.getMethod("fromFactory");
+        var definition = BeanDefinitions.of(AutoCloseable.class, new MethodBeanFactory(method, InstanceFieldBean.class));
+        try (var runtime = this.runtimeFor(definition, BeanDefinitions.of(SimpleBean.class))) {
+            runtime.start();
+
+            var bean = assertInstanceOf(InstanceFieldBean.class, runtime.get(AutoCloseable.class));
+            assertSame(bean, InstanceFieldBean.getInstance());
+            assertSame(bean, InstanceFieldBean.getContract());
+            assertSame(bean, bean.getObserved());
+        }
+    }
+
+    @Test
+    void preservesPrepopulatedInstanceFieldOnCreationAndClose() {
+        var existing = new InstanceFieldBean();
+        InstanceFieldBean.setInstance(existing);
+        try {
+            try (var runtime = this.runtimeFor(BeanDefinitions.of(InstanceFieldBean.class), BeanDefinitions.of(SimpleBean.class))) {
+                runtime.start();
+
+                assertSame(existing, InstanceFieldBean.getInstance());
+                assertSame(runtime.get(InstanceFieldBean.class), InstanceFieldBean.getContract());
+            }
+            assertSame(existing, InstanceFieldBean.getInstance());
+            assertNull(InstanceFieldBean.getContract());
+        } finally {
+            InstanceFieldBean.setInstance(null);
+        }
+    }
+
+    @Test
+    void clearsInstanceFieldsWhenPostConstructFails() {
+        var cause = new IllegalStateException("hook failure");
+        var bean = new InstanceFieldBean();
+        bean.setFailure(cause);
+        var definition = BeanDefinitions.of(InstanceFieldBean.class, new SupplierBeanFactory(() -> bean));
+        try (var runtime = this.runtimeFor(definition, BeanDefinitions.of(SimpleBean.class))) {
+            var exception = assertThrows(BeanCreationException.class, runtime::start);
+            assertSame(cause, exception.getCause());
+            assertSame(bean, bean.getObserved());
+            assertNull(InstanceFieldBean.getInstance());
+            assertNull(InstanceFieldBean.getContract());
+        }
+    }
+
+    @Test
+    void rejectsInstanceFieldWithIncompatibleType() {
+        try (var runtime = this.runtimeFor(BeanDefinitions.of(InvalidInstanceFieldBean.class))) {
+            var exception = assertThrows(DefinitionException.class, runtime::start);
+            assertTrue(exception.getMessage().contains(InvalidInstanceFieldBean.class.getName() + ".instance"));
+        }
+    }
+
+    @Test
     void initializesEachPrototypeAndSupportsProviderFields() {
         var runtime = this.runtimeFor(
                 BeanDefinitions.of(LifecycleBean.class, BeanScope.PROTOTYPE, false, new ConstructorBeanFactory(LifecycleBean.class)),
