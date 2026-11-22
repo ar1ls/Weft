@@ -33,13 +33,27 @@ java {
 
 publishing {
     publications {
-        create<MavenPublication>("mavenJava") { from(components["java"]) }
+        create<MavenPublication>("mavenJava") {
+            from(components["java"])
+            pom {
+                licenses {
+                    license {
+                        name.set("MIT License")
+                        url.set("https://opensource.org/license/mit")
+                    }
+                }
+            }
+        }
     }
 }
 
 tasks.withType<Jar>().configureEach {
     isPreserveFileTimestamps = false
     isReproducibleFileOrder = true
+    from(layout.projectDirectory.file("LICENSE")) {
+        into("META-INF")
+        rename { "LICENSE-Weft" }
+    }
     manifest {
         attributes(
             "Implementation-Title" to project.name,

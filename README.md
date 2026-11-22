@@ -205,3 +205,7 @@ The [sandbox](src/test/java/com/github/ar1ls/weft/sandbox) contains source examp
 These live in the test source set and use its classpath. See the [user guide](docs/GUIDE.md) for the full API walkthrough.
 
 The [host integration guide](docs/LOADING.md) explains how to pass your existing class loader, scan one or several module JARs, and share dependencies across module boundaries. Weft requires an explicit scan root; it does not enumerate every class visible to a loader.
+
+## License
+
+Weft is released under the [MIT License](LICENSE).
