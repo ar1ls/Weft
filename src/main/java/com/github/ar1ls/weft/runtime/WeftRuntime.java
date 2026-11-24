@@ -35,6 +35,7 @@ public class WeftRuntime implements AutoCloseable {
     List<BeanProcessor> processors;
     BeanCreator creator = new BeanCreator();
     SingletonStore singletons = new SingletonStore();
+    Map<TypeRef<?>, Map<String, BeanDefinition>> lookups = new ConcurrentHashMap<>();
     ShutdownCoordinator shutdown = new ShutdownCoordinator();
     ThreadLocal<Set<BeanKey>> creatingPrototypes = ThreadLocal.withInitial(HashSet::new);
     ThreadLocal<List<BeanKey>> creatingBeans = ThreadLocal.withInitial(ArrayList::new);
@@ -121,6 +122,7 @@ public class WeftRuntime implements AutoCloseable {
             } catch (RuntimeException | Error cleanup) {
                 e.addSuppressed(cleanup);
             } finally {
+                this.lookups.clear();
                 this.singletons.clear();
                 this.subscriptions.clear();
                 this.published.clear();
@@ -140,6 +142,7 @@ public class WeftRuntime implements AutoCloseable {
         try {
             this.shutdown.close();
         } finally {
+            this.lookups.clear();
             this.singletons.clear();
             this.subscriptions.clear();
             this.published.clear();
@@ -182,11 +185,23 @@ public class WeftRuntime implements AutoCloseable {
     public <T> T get(TypeRef<T> type, String name) {
         this.enter();
         try {
-            var descriptor = new DependencyDescriptor(type, name, DependencyKind.DIRECT, new InjectionPoint("get(" + type + ")"));
-            return (T) this.resolve(this.resolver.resolve(descriptor).getFirst());
+            return (T) this.resolve(this.lookup(Objects.requireNonNull(type, "type"), name == null ? "" : name.strip()));
         } finally {
             this.gate.exit();
         }
+    }
+
+    private BeanDefinition lookup(TypeRef<?> type, String name) {
+        var byName = this.lookups.get(type);
+        var selected = byName == null ? null : byName.get(name);
+        if (selected != null) {
+            return selected;
+        }
+
+        var descriptor = new DependencyDescriptor(type, name, DependencyKind.DIRECT, new InjectionPoint("get(" + type + ")"));
+        var definition = this.resolver.resolve(descriptor).getFirst();
+        this.lookups.computeIfAbsent(type, key -> new ConcurrentHashMap<>()).putIfAbsent(name, definition);
+        return definition;
     }
 
     private Object resolve(BeanDefinition definition) {

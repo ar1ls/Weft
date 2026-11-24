@@ -8,6 +8,7 @@ import com.github.ar1ls.weft.api.exception.MissingBeanException;
 import com.github.ar1ls.weft.definition.BeanDefinition;
 import com.github.ar1ls.weft.definition.BeanKey;
 import com.github.ar1ls.weft.definition.BeanSource;
+import com.github.ar1ls.weft.definition.TypeRef;
 import com.github.ar1ls.weft.discovery.AnnotationDefinitionReader;
 import com.github.ar1ls.weft.runtime.factory.SupplierBeanFactory;
 import com.github.ar1ls.weft.runtime.fixtures.BeanDefinitions;
@@ -34,6 +35,9 @@ class SelectionRuntimeTest {
             assertSame(runtime.get(BracketFormatter.class), runtime.get(Formatter.class));
             assertSame(runtime.get(Formatter.class), bean.primary());
             assertSame(runtime.get(Formatter.class, "plain"), bean.named());
+            assertSame(bean.named(), runtime.get(Formatter.class, " plain "));
+            assertSame(bean.primary(), runtime.get(TypeRef.of(Formatter.class), null));
+            assertThrows(MissingBeanException.class, () -> runtime.get(Formatter.class, "missing"));
             assertSame(bean.named(), bean.provider().get());
             assertSame(bean.primary(), bean.optional().orElseThrow());
             assertEquals(List.of(bean.primary(), bean.named()), bean.list());

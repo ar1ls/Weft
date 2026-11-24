@@ -104,6 +104,9 @@ class CompletionRuntimeTest {
             assertEquals(new Address("localhost", 25570), consumer.settings().address());
             assertEquals(List.of(1, 2, 3), consumer.settings().levels());
             TypeRef<Repository<String>> text = TypeRef.parameterized(Repository.class, TypeRef.of(String.class));
+            TypeRef<Repository<Integer>> number = TypeRef.parameterized(Repository.class, TypeRef.of(Integer.class));
+            assertSame(consumer.text(), runtime.get(text));
+            assertSame(consumer.number().get(), runtime.get(number));
             assertSame(consumer.text(), runtime.get(text));
             var replay = new ArrayList<String>();
             var subscription = runtime.subscribe(event -> replay.add(event.definition().key().localId()));
